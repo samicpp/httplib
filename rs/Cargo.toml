@@ -1,6 +1,6 @@
 [package]
 name = "httprs"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 
 [lib]
@@ -8,3 +8,4 @@ name = "httprs"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
+quinn = { path = "../quinn/quinn" }
