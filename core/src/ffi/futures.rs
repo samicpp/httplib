@@ -1,0 +1,74 @@
+use std::{cell::UnsafeCell, ffi::c_void, future::poll_fn, ptr, sync::{atomic::{AtomicU8, Ordering}}, task::{Poll, Waker}};
+
+pub const PENDING: u8 = 0;
+pub const READY: u8 = 1;
+pub const CANCELED: u8 = 2;
+
+#[repr(C)]
+pub struct FfiFuture{
+    pub state: AtomicU8,
+    pub result: UnsafeCell<*mut c_void>,
+    pub callback: Option<extern "C" fn(*mut c_void)>,
+    pub waker: UnsafeCell<Option<Waker>>,
+}
+
+impl FfiFuture{
+    pub fn new(cb: Option<extern "C" fn(*mut c_void)>) -> Self{
+        FfiFuture { 
+            state: AtomicU8::new(PENDING), 
+            result: UnsafeCell::new(ptr::null_mut()), 
+            callback: cb, 
+            waker: UnsafeCell::new(None), 
+        }
+    }
+
+    pub fn cancel(&self){
+        self.state.swap(CANCELED, Ordering::AcqRel);
+
+        unsafe{
+            if let Some(w) = (*self.waker.get()).take(){
+                w.wake();
+            }
+        }
+    }
+    pub fn complete(&self, result: *mut c_void){
+        if self.state.swap(READY, Ordering::AcqRel) != PENDING {
+            return;
+        }
+        
+        unsafe {
+            (*self.result.get()) = result;
+        }
+
+        if let Some(cb) = &self.callback{
+            unsafe { cb(*self.result.get()); }
+        }
+
+        unsafe{
+            if let Some(w) = (*self.waker.get()).take(){
+                w.wake();
+            }
+        }
+    }
+
+    pub fn to_future(&self) -> impl Future<Output = *mut c_void> + '_{
+        poll_fn(move |cx|{
+            match self.state.load(Ordering::Acquire){
+                READY => unsafe { Poll::Ready(*self.result.get()) },
+                CANCELED => Poll::Ready(ptr::null_mut()),
+                _ => {
+                    unsafe {
+                        let wakptr = &mut *self.waker.get();
+                        if wakptr.is_none() { 
+                            *wakptr = Some(cx.waker().clone());
+                        }
+                    }
+                    Poll::Pending
+                }
+            }
+        })
+    }
+}
+
+unsafe impl Sync for FfiFuture {}
+unsafe impl Send for FfiFuture {}
