@@ -15,5 +15,5 @@ my own ffi http library
 
 ## Features
 - [ ] ensure 
-- [ ] ~~make apis for app setup~~ other repo with easy link functions
+- [ ] ~~make apis for app setup~~ other repo with bindings to other langs
 - [ ] FFI compatible
