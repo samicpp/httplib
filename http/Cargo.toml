@@ -10,3 +10,4 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 quinn = { path = "../quinn/quinn" }
 httprs_core = { path = "../core" }
+tokio = "=1.49.0"
