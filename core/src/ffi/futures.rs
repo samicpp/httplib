@@ -21,6 +21,14 @@ impl FfiFuture{
             waker: UnsafeCell::new(None), 
         }
     }
+    pub fn new_boxed(cb: Option<extern "C" fn(*mut c_void)>) -> Box<Self>{
+        Box::new(FfiFuture { 
+            state: AtomicU8::new(PENDING), 
+            result: UnsafeCell::new(ptr::null_mut()), 
+            callback: cb, 
+            waker: UnsafeCell::new(None), 
+        })
+    }
 
     pub fn cancel(&self){
         self.state.swap(CANCELED, Ordering::AcqRel);

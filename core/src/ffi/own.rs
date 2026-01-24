@@ -40,3 +40,8 @@ pub extern "C" fn ffi_future_take_result(fut: *const FfiFuture) -> *mut c_void{
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ffi_future_free(fut: *mut FfiFuture) {
+    unsafe { drop(Box::from_raw(fut)) }
+}
