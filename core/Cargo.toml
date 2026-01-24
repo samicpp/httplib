@@ -1,0 +1,7 @@
+[package]
+name = "httprs_core"
+version = "0.1.3"
+edition = "2024"
+
+[dependencies]
+quinn = { path = "../quinn/quinn" }
