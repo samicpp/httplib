@@ -118,6 +118,14 @@ pub mod server{
 
         fn get_client<'_a>(&'_a self) -> &'_a dyn HttpClient;
         fn read_client<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpClient, std::io::Error>> + '_a>>;
+
+        fn add_header(&mut self, header: &str, value: &str);
+        fn set_header(&mut self, header: &str, value: &str);
+        fn del_header(&mut self, header: &str) -> Option<Vec<String>>;
+        
+        fn set_status(&mut self, code: u16, message: String);
+        fn close<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+        fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
     }
 
     pub type DynHttpSocket = Box<dyn HttpSocket>;

@@ -2,13 +2,26 @@ use std::collections::HashMap;
 use std::{pin::Pin};
 
 use std::io;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ReadHalf, WriteHalf};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use crate::shared::HttpMethod;
 use crate::shared::{HttpType, HttpVersion, ReadStream, Stream, WriteStream, server::{HttpClient, HttpSocket}};
 
 pub const H2C_UPGRADE: &'static [u8] = b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n";
 pub const WS_UPGRADE: &'static [u8] = b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ";
 
+
+
+fn get_chunk(buf: &[u8]) -> Vec<u8>{
+    let mut v = Vec::new();
+    let hex = format!("{:X}",buf.len());
+
+    v.extend_from_slice(hex.as_bytes());
+    v.extend_from_slice(b"\r\n");
+    v.extend_from_slice(buf);
+    v.extend_from_slice(b"\r\n");
+
+    v
+}
 
 
 #[derive(Debug)]
@@ -18,6 +31,13 @@ pub struct Http1Socket<R: ReadStream, W: WriteStream>{
 
     pub client: Http1Client,
     pub line_buf: Vec<u8>,
+
+    pub sent_head: bool,
+    pub closed: bool,
+    
+    pub code: u16,
+    pub status: String,
+    pub headers: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,12 +68,20 @@ impl<S:Stream> Http1Socket<ReadHalf<S>, WriteHalf<S>>{
 impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     pub fn with_split(netr: BufReader<R>, netw: W) -> Self {
         Self {
-            netr,
-            netw,
+            netr, netw,
+
             client: Default::default(),
             line_buf: Vec::new(),
+            
+            sent_head: false,
+            closed: false,
+
+            code: 200,
+            status: "OK".to_string(),
+            headers: HashMap::new(),
         }
     }
+
 
     pub async fn read_client(&mut self) -> io::Result<&Http1Client>{
         self.line_buf.clear();
@@ -132,6 +160,71 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
 
         Ok(&self.client)
     }
+
+
+    pub fn add_header(&mut self, header: &str, value: &str) {
+        if let Some(hs) = self.headers.get_mut(header) { hs.push(value.to_owned()); }
+        else { self.headers.insert(header.to_owned(), vec![ value.to_owned() ]); }
+    }
+    pub fn set_header(&mut self, header: &str, value: &str){
+        self.headers.insert(header.to_owned(), vec![ value.to_owned() ]);
+    }
+    pub fn del_header(&mut self, header: &str) -> Option<Vec<String>>{
+        self.headers.remove(header)
+    }
+
+    pub async fn send_head(&mut self) -> io::Result<()> {
+        if !self.sent_head{
+            let headers = self.headers.iter().map(|(h,vs)|vs.iter().map(|v| format!("{}: {}\r\n", h, v)).collect::<String>()).collect::<String>();
+            let head = format!(
+                "{} {} {}\r\n{}\r\n", 
+                match &self.client.version { HttpVersion::Unknown(Some(s)) => s.to_owned(), v => format!("{}", v)},
+                self.code,
+                &self.status,
+                headers,
+            );
+            
+            self.netw.write(head.as_bytes()).await?;
+            self.sent_head = true;
+
+            Ok(())
+        }
+        else{
+            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+        }
+    }
+
+    pub async fn write(&mut self, body: &[u8]) -> io::Result<()>{
+         if !self.closed{
+            if !self.sent_head{
+                self.headers.insert("Transfer-Encoding".to_owned(), vec!["chunked".to_owned()]);
+                self.send_head().await?;
+            }
+            self.netw.write(&get_chunk(body)).await?;
+            Ok(())
+        }
+        else{
+            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+        }
+    }
+    pub async fn close(&mut self, body: &[u8]) -> io::Result<()>{
+        if !self.sent_head{
+            self.headers.insert("Content-Length".to_owned(), vec![body.len().to_string()]);
+            self.send_head().await?;
+            self.netw.write(body).await?;
+            self.closed = true;
+            Ok(())
+        }
+        else if !self.closed{
+            self.netw.write(&get_chunk(body)).await?;
+            self.netw.write(b"0\r\n\r\n").await?;
+            self.closed = true;
+            Ok(())
+        }
+        else{
+            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+        }
+    }
 }
 
 impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
@@ -145,6 +238,25 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
     fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + '_>> {
         Box::pin(async move {
             self.read_client().await.and_then(|c| Ok(c as &dyn HttpClient))
+        })
+    }
+
+    fn add_header(&mut self, header: &str, value: &str) { self.add_header(header, value) }
+    fn set_header(&mut self, header: &str, value: &str){ self.set_header(header, value) }
+    fn del_header(&mut self, header: &str) -> Option<Vec<String>>{ self.del_header(header) }
+
+    fn set_status(&mut self, code: u16, message: String) {
+        self.code = code;
+        self.status = message;
+    }
+    fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            self.write(body).await
+        })
+    }
+    fn close<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            self.close(body).await
         })
     }
 }
