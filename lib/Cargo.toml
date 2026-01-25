@@ -1,0 +1,13 @@
+[package]
+name = "httplib"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "httplib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+quinn = { path = "../quinn/quinn" }
+httprs_core = { path = "../core" }
+tokio = "=1.49.0"

@@ -1,4 +1,4 @@
 [workspace]
-members = [ "core", "quic", "http" ]
+members = [ "core", "quic", "http", "lib" ]
 exclude = [ "quinn" ]
 resolver = "3"

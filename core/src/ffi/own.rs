@@ -10,6 +10,11 @@ pub extern "C" fn add_i64(x: i64, y: i64) -> i64 {
 // futures
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ffi_future_new(cb: Option<extern "C" fn(*mut c_void)> ) -> *mut FfiFuture{
+    Box::into_raw(FfiFuture::new_boxed(cb))
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ffi_future_state(fut: *const FfiFuture) -> u8{
     unsafe { (*fut).state.load(Ordering::Acquire) }
 }
@@ -39,6 +44,16 @@ pub extern "C" fn ffi_future_take_result(fut: *const FfiFuture) -> *mut c_void{
             ptr::null_mut()
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ffi_future_cancel(fut: *const FfiFuture) {
+    unsafe { (*fut).cancel() }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ffi_future_complete(fut: *const FfiFuture, result: *mut c_void) {
+    unsafe { (*fut).complete(result) }
 }
 
 #[unsafe(no_mangle)]
