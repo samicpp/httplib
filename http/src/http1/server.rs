@@ -174,7 +174,11 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     }
 
     pub async fn send_head(&mut self) -> io::Result<()> {
-        if !self.sent_head{
+        if !self.sent_head && self.client.version == HttpVersion::Http09 {
+            self.sent_head = true;
+            Ok(())
+        }
+        else if !self.sent_head{
             let headers = self.headers.iter().map(|(h,vs)|vs.iter().map(|v| format!("{}: {}\r\n", h, v)).collect::<String>()).collect::<String>();
             let head = format!(
                 "{} {} {}\r\n{}\r\n", 

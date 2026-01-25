@@ -14,7 +14,7 @@ pub trait Stream: ReadStream + WriteStream {}
 impl<A> Stream for A where A: ReadStream + WriteStream {}
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HttpType{
     Http1,
     Http2,
@@ -30,7 +30,7 @@ impl Display for HttpType{
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HttpVersion{
     Unknown(Option<String>),
     Debug,
@@ -56,7 +56,7 @@ impl Display for HttpVersion{
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum HttpMethod{
     Unknown(Option<String>),
 
