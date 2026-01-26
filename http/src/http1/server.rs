@@ -99,8 +99,8 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
                 self.client.method = HttpMethod::from(mpv[0]);
                 self.client.path = mpv[1].to_owned();
                 self.client.version = 
-                if mpv[2].eq_ignore_ascii_case("http/1.0") { HttpVersion::Http10 }
-                else if mpv[2].eq_ignore_ascii_case("http/1.1") { HttpVersion::Http11 }
+                if mpv[2].trim().eq_ignore_ascii_case("http/1.0") { HttpVersion::Http10 }
+                else if mpv[2].trim().eq_ignore_ascii_case("http/1.1") { HttpVersion::Http11 }
                 else { HttpVersion::Unknown(Some(mpv[2].to_owned())) };
             }
 
