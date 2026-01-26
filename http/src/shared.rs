@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, collections::HashMap, pin::Pin};
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -14,7 +14,7 @@ pub trait Stream: ReadStream + WriteStream {}
 impl<A> Stream for A where A: ReadStream + WriteStream {}
 
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpType{
     Http1,
     Http2,
@@ -101,23 +101,25 @@ impl HttpMethod{
 
 
 pub mod server{
-    use std::{collections::HashMap, pin::Pin};
-
     use super::*;
 
     pub trait HttpClient{
+        fn is_valid(&self) -> bool;
+        
         fn get_method<'_a>(&'_a self) -> &'_a HttpMethod;
         fn get_path<'_a>(&'_a self) -> &'_a str;
         fn get_version<'_a>(&'_a self) -> &'_a HttpVersion;
 
         fn get_headers<'_a>(&'_a self) -> &'_a HashMap<String, Vec<String>>;
         fn get_body<'_a>(&'_a self) -> &'_a [u8];
+
+        fn clone(&self) -> Box<dyn HttpClient>;
     }
     pub trait HttpSocket{
         fn get_type() -> HttpType;
 
         fn get_client<'_a>(&'_a self) -> &'_a dyn HttpClient;
-        fn read_client<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpClient, std::io::Error>> + '_a>>;
+        fn read_client<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpClient, std::io::Error>> + Send + '_a>>;
 
         fn add_header(&mut self, header: &str, value: &str);
         fn set_header(&mut self, header: &str, value: &str);
@@ -131,3 +133,9 @@ pub mod server{
     pub type DynHttpSocket = Box<dyn HttpSocket>;
 }
 
+pub mod client{
+    // use super::*;
+
+    pub trait HttpRequest{}
+    pub trait HttpResponse{}
+}

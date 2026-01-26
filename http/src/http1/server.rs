@@ -3,25 +3,14 @@ use std::{pin::Pin};
 
 use std::io;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
+use crate::http1::get_chunk;
 use crate::shared::HttpMethod;
 use crate::shared::{HttpType, HttpVersion, ReadStream, Stream, WriteStream, server::{HttpClient, HttpSocket}};
+
 
 pub const H2C_UPGRADE: &'static [u8] = b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n";
 pub const WS_UPGRADE: &'static [u8] = b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ";
 
-
-
-fn get_chunk(buf: &[u8]) -> Vec<u8>{
-    let mut v = Vec::new();
-    let hex = format!("{:X}",buf.len());
-
-    v.extend_from_slice(hex.as_bytes());
-    v.extend_from_slice(b"\r\n");
-    v.extend_from_slice(buf);
-    v.extend_from_slice(b"\r\n");
-
-    v
-}
 
 
 #[derive(Debug)]
@@ -229,6 +218,15 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
         }
     }
+
+    pub fn reset(&mut self){
+        self.client.reset();
+        self.code = 200;
+        self.status = "OK".to_owned();
+        self.headers.clear();
+        self.sent_head = false;
+        self.closed = false;
+    }
 }
 
 impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
@@ -239,7 +237,7 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
     fn get_client(&self) -> &dyn HttpClient {
         &self.client
     }
-    fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + '_>> {
+    fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
             self.read_client().await.and_then(|c| Ok(c as &dyn HttpClient))
         })
@@ -266,7 +264,17 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
 }
 
 
+impl Http1Client{
+    pub fn reset(&mut self) { *self = Default::default() }
+}
 impl HttpClient for Http1Client{
+    fn clone(&self) -> Box<dyn HttpClient> {
+        let c = Clone::clone(self);
+        Box::new(c)
+    }
+    fn is_valid(&self) -> bool {
+        self.valid
+    }
     fn get_method(&self) -> &HttpMethod {
         &self.method
     }
@@ -284,7 +292,6 @@ impl HttpClient for Http1Client{
         &self.body
     }
 }
-
 impl Default for Http1Client{
     fn default() -> Self {
         Self {
