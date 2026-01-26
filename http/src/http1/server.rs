@@ -123,6 +123,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             }
         }
         else if !self.client.body_complete{
+            // TODO: http10 read until EOF
             if let Some(te) = self.client.headers.get("transfer-encoding") && te[0].contains("chunked") {
                 let _ = self.netr.read_until(b'\n', &mut self.line_buf).await?;
                 let string = String::from_utf8_lossy(&self.line_buf);
@@ -188,7 +189,12 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     }
 
     pub async fn write(&mut self, body: &[u8]) -> io::Result<()>{
-         if !self.closed{
+        if !self.closed && self.client.version == HttpVersion::Http09 {
+            if !self.sent_head { self.send_head().await? }
+            self.netw.write(body).await?;
+            Ok(())
+        }
+        else if !self.closed{
             if !self.sent_head{
                 self.headers.insert("Transfer-Encoding".to_owned(), vec!["chunked".to_owned()]);
                 self.send_head().await?;
@@ -206,6 +212,10 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             self.send_head().await?;
             self.netw.write(body).await?;
             self.closed = true;
+            Ok(())
+        }
+        else if !self.closed && self.client.version == HttpVersion::Http09 {
+            self.netw.write(body).await?;
             Ok(())
         }
         else if !self.closed{
@@ -230,7 +240,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
 }
 
 impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
-    fn get_type() -> HttpType {
+    fn get_type(&self) -> HttpType {
         HttpType::Http1
     }
 
@@ -268,12 +278,11 @@ impl Http1Client{
     pub fn reset(&mut self) { *self = Default::default() }
 }
 impl HttpClient for Http1Client{
-    fn clone(&self) -> Box<dyn HttpClient> {
-        let c = Clone::clone(self);
-        Box::new(c)
-    }
     fn is_valid(&self) -> bool {
         self.valid
+    }
+    fn is_complete(&self) -> (bool, bool) {
+        (self.head_complete, self.body_complete)
     }
     fn get_method(&self) -> &HttpMethod {
         &self.method
@@ -285,11 +294,18 @@ impl HttpClient for Http1Client{
         &self.version
     }
 
+    fn get_host(&self) -> Option<&str> {
+        self.headers.get("host").and_then(|h|Some(h[0].as_str()))
+    }
     fn get_headers(&self) -> &HashMap<String, Vec<String>> {
         &self.headers
     }
     fn get_body(&self) -> &[u8] {
         &self.body
+    }
+    fn clone(&self) -> Box<dyn HttpClient> {
+        let c = Clone::clone(self);
+        Box::new(c)
     }
 }
 impl Default for Http1Client{

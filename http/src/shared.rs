@@ -105,18 +105,20 @@ pub mod server{
 
     pub trait HttpClient{
         fn is_valid(&self) -> bool;
+        fn is_complete(&self) -> (bool, bool);
         
         fn get_method<'_a>(&'_a self) -> &'_a HttpMethod;
         fn get_path<'_a>(&'_a self) -> &'_a str;
         fn get_version<'_a>(&'_a self) -> &'_a HttpVersion;
 
+        fn get_host<'_a>(&'_a self) -> Option<&'_a str>;
         fn get_headers<'_a>(&'_a self) -> &'_a HashMap<String, Vec<String>>;
         fn get_body<'_a>(&'_a self) -> &'_a [u8];
 
         fn clone(&self) -> Box<dyn HttpClient>;
     }
     pub trait HttpSocket{
-        fn get_type() -> HttpType;
+        fn get_type(&self) -> HttpType;
 
         fn get_client<'_a>(&'_a self) -> &'_a dyn HttpClient;
         fn read_client<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpClient, std::io::Error>> + Send + '_a>>;
@@ -134,8 +136,35 @@ pub mod server{
 }
 
 pub mod client{
-    // use super::*;
+    use super::*;
 
-    pub trait HttpRequest{}
-    pub trait HttpResponse{}
+    pub trait HttpRequest{
+        fn get_type(&self) -> HttpType;
+
+        fn add_header(&mut self, header: &str, value: &str);
+        fn set_header(&mut self, header: &str, value: &str);
+        fn del_header(&mut self, header: &str) -> Option<Vec<String>>;
+        
+        fn set_method(&mut self, method: HttpMethod);
+        fn set_path(&mut self, method: String);
+
+        fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+        fn send<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+
+        fn get_response<'_a>(&'_a self) -> &'_a dyn HttpResponse;
+        fn read_response<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpResponse, std::io::Error>> + Send + '_a>>;
+    }
+    pub trait HttpResponse{
+        fn is_valid(&self) -> bool;
+        fn is_complete(&self) -> (bool, bool);
+
+        fn get_version<'_a>(&'_a self) -> &'_a HttpVersion;
+        fn get_code(&self) -> u16;
+        fn get_status<'_a>(&'_a self) -> Option<&'_a str>;
+
+        fn get_headers<'_a>(&'_a self) -> &'_a HashMap<String, Vec<String>>;
+        fn get_body<'_a>(&'_a self) -> &'_a [u8];
+
+        fn clone(&self) -> Box<dyn HttpResponse>;
+    }
 }
