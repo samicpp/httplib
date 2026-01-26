@@ -150,7 +150,14 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
 
         Ok(&self.client)
     }
-
+    pub async fn read_until_complete(&mut self) -> io::Result<&Http1Client>{
+        while !self.read_client().await?.body_complete {}
+        Ok(&self.client)
+    }
+    pub async fn read_until_head_complete(&mut self) -> io::Result<&Http1Client>{
+        while !self.read_client().await?.head_complete {}
+        Ok(&self.client)
+    }
 
     pub fn add_header(&mut self, header: &str, value: &str) {
         if let Some(hs) = self.headers.get_mut(header) { hs.push(value.to_owned()); }
@@ -250,6 +257,16 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
     fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
             self.read_client().await.and_then(|c| Ok(c as &dyn HttpClient))
+        })
+    }
+    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
+        Box::pin(async move {
+            self.read_until_complete().await.and_then(|c| Ok(c as &dyn HttpClient))
+        })
+    }
+    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
+        Box::pin(async move {
+            self.read_until_head_complete().await.and_then(|c| Ok(c as &dyn HttpClient))
         })
     }
 

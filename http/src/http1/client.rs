@@ -212,6 +212,14 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         }
         Ok(&self.response)
     }
+    pub async fn read_until_complete(&mut self) -> io::Result<&Http1Response>{
+        while !self.read_response().await?.body_complete {}
+        Ok(&self.response)
+    }
+    pub async fn read_until_head_complete(&mut self) -> io::Result<&Http1Response>{
+        while !self.read_response().await?.head_complete {}
+        Ok(&self.response)
+    }
 
     pub fn reset(&mut self){
         self.response.reset();
@@ -236,6 +244,17 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for Http1Request<R, W>{
             self.read_response().await.and_then(|res| Ok(res as &dyn HttpResponse))
         })
     }
+    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpResponse, std::io::Error>> + Send + '_>> {
+        Box::pin(async move {
+            self.read_until_complete().await.and_then(|c| Ok(c as &dyn HttpResponse))
+        })
+    }
+    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpResponse, std::io::Error>> + Send + '_>> {
+        Box::pin(async move {
+            self.read_until_head_complete().await.and_then(|c| Ok(c as &dyn HttpResponse))
+        })
+    }
+
 
     fn add_header(&mut self, header: &str, value: &str) { self.add_header(header, value) }
     fn set_header(&mut self, header: &str, value: &str){ self.set_header(header, value) }

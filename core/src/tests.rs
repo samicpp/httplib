@@ -21,15 +21,10 @@ fn httpcpp_test(){
 
 #[test]
 fn ffi_future_sleep(){
-    let fut = Arc::new(FfiFuture::new(None));
-    let tfut = fut.clone();
-    thread::spawn(move || {
-        thread::sleep(Duration::from_millis(500));
-        tfut.complete(ptr::null_mut());
-    });
+    let fut = FfiFuture::new(None);
 
     assert!(fut.state.load(Ordering::Acquire) == futures::PENDING);
-    thread::sleep(Duration::from_millis(500));
+    fut.complete(ptr::null_mut());
     assert!(fut.state.load(Ordering::Acquire) == futures::READY);
     unsafe { assert!(*fut.result.get() == ptr::null_mut()) };
 

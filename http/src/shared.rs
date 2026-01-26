@@ -122,6 +122,8 @@ pub mod server{
 
         fn get_client<'_a>(&'_a self) -> &'_a dyn HttpClient;
         fn read_client<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpClient, std::io::Error>> + Send + '_a>>;
+        fn read_until_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpClient, std::io::Error>> + Send + '_a>>;
+        fn read_until_head_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpClient, std::io::Error>> + Send + '_a>>;
 
         fn add_header(&mut self, header: &str, value: &str);
         fn set_header(&mut self, header: &str, value: &str);
@@ -132,7 +134,7 @@ pub mod server{
         fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
     }
 
-    pub type DynHttpSocket = Box<dyn HttpSocket>;
+    // pub type DynHttpSocket = Box<dyn HttpSocket>;
 }
 
 pub mod client{
@@ -153,6 +155,8 @@ pub mod client{
 
         fn get_response<'_a>(&'_a self) -> &'_a dyn HttpResponse;
         fn read_response<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpResponse, std::io::Error>> + Send + '_a>>;
+        fn read_until_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpResponse, std::io::Error>> + Send + '_a>>;
+        fn read_until_head_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a dyn HttpResponse, std::io::Error>> + Send + '_a>>;
     }
     pub trait HttpResponse{
         fn is_valid(&self) -> bool;
