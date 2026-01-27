@@ -1,9 +1,26 @@
+use tokio::runtime::Runtime;
 use crate::ffi::futures::{self, FfiFuture};
-use std::{ffi::c_void, sync::atomic::Ordering, ptr};
+use std::{ffi::c_void, ptr, sync::{OnceLock, atomic::Ordering}};
+
+
+// tokio
+
+pub static RT: OnceLock<Runtime> = OnceLock::new();
 
 #[unsafe(no_mangle)]
-pub extern "C" fn add_i64(x: i64, y: i64) -> i64 {
-    x + y
+pub extern "C" fn init_rt() -> bool{
+    if let Ok(rt) = tokio::runtime::Builder::new_multi_thread().enable_all().build(){
+        RT.set(rt).is_ok()
+    }
+    else{
+        false
+    }
+}
+
+#[allow(static_mut_refs)]
+#[unsafe(no_mangle)]
+pub extern "C" fn has_init() -> bool{
+    RT.get().is_some()
 }
 
 
@@ -59,4 +76,21 @@ pub extern "C" fn ffi_future_complete(fut: *const FfiFuture, result: *mut c_void
 #[unsafe(no_mangle)]
 pub extern "C" fn ffi_future_free(fut: *mut FfiFuture) {
     unsafe { drop(Box::from_raw(fut)) }
+}
+
+
+// slice
+
+#[repr(C)]
+pub struct FfiSlice{
+    pub len: usize,
+    pub ptr: *mut u8,
+}
+
+
+// test
+
+#[unsafe(no_mangle)]
+pub extern "C" fn add_i64(x: i64, y: i64) -> i64 {
+    x + y
 }

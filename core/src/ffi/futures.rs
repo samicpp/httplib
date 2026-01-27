@@ -4,7 +4,6 @@ pub const PENDING: u8 = 0;
 pub const READY: u8 = 1;
 pub const CANCELED: u8 = 2;
 
-#[repr(C)]
 pub struct FfiFuture{
     pub state: AtomicU8,
     pub result: UnsafeCell<*mut c_void>,

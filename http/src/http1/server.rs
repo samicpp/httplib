@@ -5,7 +5,7 @@ use std::io;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use crate::http1::get_chunk;
 use crate::shared::HttpMethod;
-use crate::shared::{HttpType, HttpVersion, ReadStream, Stream, WriteStream, server::{HttpClient, HttpSocket}};
+use crate::shared::{HttpType, HttpVersion, ReadStream, Stream, WriteStream, HttpClient, HttpSocket};
 
 
 pub const H2C_UPGRADE: &'static [u8] = b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n";
@@ -18,7 +18,7 @@ pub struct Http1Socket<R: ReadStream, W: WriteStream>{
     pub netr: BufReader<R>,
     pub netw: W,
 
-    pub client: Http1Client,
+    pub client: HttpClient,
     pub line_buf: Vec<u8>,
 
     pub sent_head: bool,
@@ -27,22 +27,6 @@ pub struct Http1Socket<R: ReadStream, W: WriteStream>{
     pub code: u16,
     pub status: String,
     pub headers: HashMap<String, Vec<String>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Http1Client{
-    pub valid: bool,
-
-    pub mpv_complete: bool,
-    pub head_complete: bool,
-    pub body_complete: bool,
-    
-    pub method: HttpMethod,
-    pub path: String,
-    pub version: HttpVersion,
-
-    pub headers: HashMap<String, Vec<String>>,
-    pub body: Vec<u8>,
 }
 
 
@@ -72,7 +56,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     }
 
 
-    pub async fn read_client(&mut self) -> io::Result<&Http1Client>{
+    pub async fn read_client(&mut self) -> io::Result<&HttpClient>{
         self.line_buf.clear();
 
         if !self.client.valid {
@@ -150,11 +134,11 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
 
         Ok(&self.client)
     }
-    pub async fn read_until_complete(&mut self) -> io::Result<&Http1Client>{
+    pub async fn read_until_complete(&mut self) -> io::Result<&HttpClient>{
         while !self.read_client().await?.body_complete {}
         Ok(&self.client)
     }
-    pub async fn read_until_head_complete(&mut self) -> io::Result<&Http1Client>{
+    pub async fn read_until_head_complete(&mut self) -> io::Result<&HttpClient>{
         while !self.read_client().await?.head_complete {}
         Ok(&self.client)
     }
@@ -251,22 +235,22 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
         HttpType::Http1
     }
 
-    fn get_client(&self) -> &dyn HttpClient {
+    fn get_client(&self) -> &HttpClient {
         &self.client
     }
-    fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
-            self.read_client().await.and_then(|c| Ok(c as &dyn HttpClient))
+            self.read_client().await
         })
     }
-    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
-            self.read_until_complete().await.and_then(|c| Ok(c as &dyn HttpClient))
+            self.read_until_complete().await
         })
     }
-    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
-            self.read_until_head_complete().await.and_then(|c| Ok(c as &dyn HttpClient))
+            self.read_until_head_complete().await
         })
     }
 
@@ -290,56 +274,3 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
     }
 }
 
-
-impl Http1Client{
-    pub fn reset(&mut self) { *self = Default::default() }
-}
-impl HttpClient for Http1Client{
-    fn is_valid(&self) -> bool {
-        self.valid
-    }
-    fn is_complete(&self) -> (bool, bool) {
-        (self.head_complete, self.body_complete)
-    }
-    fn get_method(&self) -> &HttpMethod {
-        &self.method
-    }
-    fn get_path(&self) -> &str {
-        &self.path
-    }
-    fn get_version(&self) -> &HttpVersion {
-        &self.version
-    }
-
-    fn get_host(&self) -> Option<&str> {
-        self.headers.get("host").and_then(|h|Some(h[0].as_str()))
-    }
-    fn get_headers(&self) -> &HashMap<String, Vec<String>> {
-        &self.headers
-    }
-    fn get_body(&self) -> &[u8] {
-        &self.body
-    }
-    fn clone(&self) -> Box<dyn HttpClient> {
-        let c = Clone::clone(self);
-        Box::new(c)
-    }
-}
-impl Default for Http1Client{
-    fn default() -> Self {
-        Self {
-            valid: true,
-
-            mpv_complete: false,
-            head_complete: false,
-            body_complete: false,
-
-            method: HttpMethod::Unknown(None),
-            path: String::new(),
-            version: HttpVersion::Unknown(None),
-
-            headers: HashMap::new(),
-            body: Vec::new(),
-        }
-    }
-}

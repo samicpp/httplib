@@ -24,7 +24,7 @@ where
 
 pub type DynHttpSocket = PolyHttpSocket<ReadHalf<Box<dyn Stream>>, WriteHalf<Box<dyn Stream>>>;
 pub trait Server{
-    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynHttpSocket), std::io::Error>> + 'a>>;
+    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynHttpSocket), std::io::Error>> + Send + 'a>>;
 }
 
 pub struct TcpServer{
@@ -32,7 +32,7 @@ pub struct TcpServer{
     listener: TcpListener,
 }
 impl Server for TcpServer{
-    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynHttpSocket), std::io::Error>> + 'a>> {
+    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynHttpSocket), std::io::Error>> + Send + 'a>> {
         Box::pin(async move{
             let (s, addr) = self.listener.accept().await?;
             let sock: Box<dyn Stream> = Box::new(s);

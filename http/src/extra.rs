@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use crate::{http1::server::Http1Socket, shared::{HttpType, ReadStream, WriteStream, server::{HttpClient, HttpSocket}}};
+use crate::{http1::server::Http1Socket, shared::{HttpType, ReadStream, WriteStream, HttpClient, HttpSocket}};
 
 pub enum PolyHttpSocket<R: ReadStream, W: WriteStream>{
     Http1(Http1Socket<R, W>)
@@ -13,29 +13,29 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
         }
     }
 
-    fn get_client(&self) -> &dyn HttpClient {
+    fn get_client(&self) -> &HttpClient {
         match self{
             Self::Http1(h) => &h.client,
         }
     }
-    fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
             match self{
-                Self::Http1(h) => h.read_client().await.and_then(|c| Ok(c as &dyn HttpClient)),
+                Self::Http1(h) => h.read_client().await,
             }
         })
     }
-    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
             match self{
-                Self::Http1(h) => h.read_until_complete().await.and_then(|c| Ok(c as &dyn HttpClient)),
+                Self::Http1(h) => h.read_until_complete().await,
             }
         })
     }
-    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
             match self{
-                Self::Http1(h) => h.read_until_head_complete().await.and_then(|c| Ok(c as &dyn HttpClient)),
+                Self::Http1(h) => h.read_until_head_complete().await,
             }
         })
     }

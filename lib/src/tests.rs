@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 
 use std::net::SocketAddr;
-use http::{extra::PolyHttpSocket, shared::{ReadStream, WriteStream, server::HttpSocket}};
+use http::{extra::PolyHttpSocket, shared::{ReadStream, WriteStream, HttpSocket}};
 use crate::servers::{Server, TcpServer, tcp_serve};
 
 #[cfg(test)]

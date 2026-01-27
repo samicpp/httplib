@@ -2,7 +2,7 @@ use std::{collections::HashMap, io, pin::Pin};
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 
-use crate::{http1::get_chunk, shared::{HttpMethod, HttpType, HttpVersion, ReadStream, Stream, WriteStream, client::{HttpRequest, HttpResponse}}};
+use crate::{http1::get_chunk, shared::{HttpMethod, HttpType, HttpVersion, ReadStream, Stream, WriteStream, HttpRequest, HttpResponse}};
 
 
 
@@ -11,7 +11,7 @@ pub struct Http1Request<R: ReadStream, W: WriteStream>{
     pub netr: BufReader<R>,
     pub netw: W,
 
-    pub response: Http1Response,
+    pub response: HttpResponse,
     pub line_buf: Vec<u8>,
 
     pub sent_head: bool,
@@ -21,22 +21,6 @@ pub struct Http1Request<R: ReadStream, W: WriteStream>{
     pub method: HttpMethod,
     pub version: HttpVersion,
     pub headers: HashMap<String, Vec<String>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Http1Response{
-    pub valid: bool,
-
-    pub vcs_complete: bool,
-    pub head_complete: bool,
-    pub body_complete: bool,
-
-    pub version: HttpVersion,
-    pub code: u16,
-    pub status: String,
-
-    pub headers: HashMap<String, Vec<String>>,
-    pub body: Vec<u8>,
 }
 
 
@@ -143,7 +127,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         }
     }
 
-    pub async fn read_response(&mut self) -> io::Result<&Http1Response> {
+    pub async fn read_response(&mut self) -> io::Result<&HttpResponse> {
         self.line_buf.clear();
 
         if !self.response.valid {
@@ -212,11 +196,11 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         }
         Ok(&self.response)
     }
-    pub async fn read_until_complete(&mut self) -> io::Result<&Http1Response>{
+    pub async fn read_until_complete(&mut self) -> io::Result<&HttpResponse>{
         while !self.read_response().await?.body_complete {}
         Ok(&self.response)
     }
-    pub async fn read_until_head_complete(&mut self) -> io::Result<&Http1Response>{
+    pub async fn read_until_head_complete(&mut self) -> io::Result<&HttpResponse>{
         while !self.read_response().await?.head_complete {}
         Ok(&self.response)
     }
@@ -236,22 +220,22 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for Http1Request<R, W>{
         HttpType::Http1
     }
 
-    fn get_response(&self) -> &dyn HttpResponse {
+    fn get_response(&self) -> &HttpResponse {
         &self.response
     }
-    fn read_response(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpResponse, std::io::Error>> + Send + '_>> {
+    fn read_response(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
-            self.read_response().await.and_then(|res| Ok(res as &dyn HttpResponse))
+            self.read_response().await
         })
     }
-    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpResponse, std::io::Error>> + Send + '_>> {
+    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
-            self.read_until_complete().await.and_then(|c| Ok(c as &dyn HttpResponse))
+            self.read_until_complete().await
         })
     }
-    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ dyn HttpResponse, std::io::Error>> + Send + '_>> {
+    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, std::io::Error>> + Send + '_>> {
         Box::pin(async move {
-            self.read_until_head_complete().await.and_then(|c| Ok(c as &dyn HttpResponse))
+            self.read_until_head_complete().await
         })
     }
 
@@ -278,56 +262,3 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for Http1Request<R, W>{
     }
 }
 
-
-impl HttpResponse for Http1Response{
-    fn is_valid(&self) -> bool {
-        self.valid
-    }
-    fn is_complete(&self) -> (bool, bool) {
-        (self.head_complete, self.body_complete)
-    }
-
-    fn get_version(&self) -> &HttpVersion {
-        &self.version
-    }
-    fn get_code(&self) -> u16 {
-        self.code
-    }
-    fn get_status(&self) -> Option<&str> {
-        Some(&self.status)
-    }
-
-    fn get_headers(&self) -> &HashMap<String, Vec<String>> {
-        &self.headers
-    }
-    fn get_body(&self) -> &[u8] {
-        &self.body
-    }
-    fn clone(&self) -> Box<dyn HttpResponse> {
-        let c = Clone::clone(self);
-        Box::new(c)
-    }
-}
-impl Default for Http1Response{
-    fn default() -> Self {
-        Self {
-            valid: true,
-
-            vcs_complete: false,
-            head_complete: false,
-            body_complete: false,
-
-            version: HttpVersion::Unknown(None),
-            code: 0,
-            status: String::new(),
-
-            headers: HashMap::new(),
-            body: Vec::new(),
-        }
-    }
-}
-impl Http1Response{
-    pub fn reset(&mut self){
-        *self = Default::default();
-    }
-}
