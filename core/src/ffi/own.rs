@@ -1,5 +1,6 @@
 use tokio::runtime::Runtime;
 use crate::ffi::futures::{self, FfiFuture};
+use core::slice;
 use std::{ffi::c_void, ptr, sync::{OnceLock, atomic::Ordering}};
 
 
@@ -82,11 +83,94 @@ pub extern "C" fn ffi_future_free(fut: *mut FfiFuture) {
 // slice
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct FfiSlice{
+    pub owned: bool,
     pub len: usize,
-    pub ptr: *mut u8,
+    pub cap: usize,
+    pub ptr: *const u8,
 }
 
+impl FfiSlice{
+    pub fn from_string(string: String) -> Self{
+        let bytes = string.into_bytes();
+        let ptr = bytes.as_ptr();
+        let len = bytes.len();
+        let cap = bytes.capacity();
+        std::mem::forget(bytes);
+
+        Self {
+            owned: true,
+            len,
+            cap,
+            ptr,
+        }
+    }
+    pub fn from_vec(vec: Vec<u8>) -> Self{
+        let ptr = vec.as_ptr();
+        let len = vec.len();
+        let cap = vec.capacity();
+        std::mem::forget(vec);
+
+        Self {
+            owned: true,
+            len,
+            cap,
+            ptr,
+        }
+    }
+    pub fn from_str(str_slice: &str) -> Self{
+        let ptr = str_slice.as_ptr();
+        let len = str_slice.len();
+
+        Self {
+            owned: false,
+            len,
+            ptr,
+            cap: len,
+        }
+    }
+    pub fn from_buf(slice: &[u8]) -> Self{
+        let ptr = slice.as_ptr();
+        let len = slice.len();
+
+        Self {
+            owned: false,
+            len,
+            ptr,
+            cap: len,
+        }
+    }
+
+    pub fn empty() -> Self{
+        Self { len: 0, cap: 0, ptr: ptr::null(), owned: false }
+    }
+
+    pub fn free(self) {
+        if self.owned && self.ptr != ptr::null(){
+            drop(self.to_vec());
+        }
+    }
+    pub fn to_string(self) -> String{
+        if !self.owned { panic!("not owned") }
+        unsafe { String::from_raw_parts(self.ptr as *mut u8, self.len, self.cap) }
+    }
+    pub fn to_vec(self) -> Vec<u8>{
+        if !self.owned { panic!("not owned") }
+        unsafe { Vec::from_raw_parts(self.ptr as *mut u8, self.len, self.cap) }
+    }
+    pub fn as_bytes(&self) -> &[u8]{
+        unsafe { slice::from_raw_parts(self.ptr, self.len) }
+    }
+    pub fn as_str(&self) -> std::borrow::Cow<'_, str>{
+        String::from_utf8_lossy(self.as_bytes())
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn free_slice(slice: FfiSlice) {
+    slice.free();
+}
 
 // test
 

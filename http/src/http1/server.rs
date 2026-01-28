@@ -101,6 +101,10 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             else if hv.len() == 1 {
                 self.client.valid = false;
             }
+
+            else if hv[0].eq_ignore_ascii_case("host"){
+                let _ = self.client.host.get_or_insert(hv[1].to_owned());
+            }
             else{
                 if let Some(hs) = self.client.headers.get_mut(&hv[0].to_ascii_lowercase()) { hs.push(hv[1].to_owned()); }
                 else { self.client.headers.insert(hv[0].to_ascii_lowercase(), vec![ hv[1].to_owned() ]); }

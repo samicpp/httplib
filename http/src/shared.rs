@@ -220,7 +220,6 @@ impl HttpResponse{
     }
 }
 
-
 pub trait HttpRequest{
     fn get_type(&self) -> HttpType;
 
