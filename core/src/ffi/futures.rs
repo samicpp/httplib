@@ -7,30 +7,31 @@ pub const CANCELED: u8 = 2;
 pub struct FfiFuture{
     pub state: AtomicU8,
     pub result: UnsafeCell<*mut c_void>,
-    pub callback: Option<extern "C" fn(*mut c_void)>,
+    pub userdata: UnsafeCell<*mut c_void>,
+    pub callback: Option<extern "C" fn(*mut c_void, *mut c_void)>,
     pub waker: UnsafeCell<Option<Waker>>,
 }
 
 impl FfiFuture{
-    pub fn new(cb: Option<extern "C" fn(*mut c_void)>) -> Self{
+    pub fn new(cb: Option<extern "C" fn(*mut c_void, *mut c_void)>, userdata: *mut c_void) -> Self{
         FfiFuture { 
             state: AtomicU8::new(PENDING), 
             result: UnsafeCell::new(ptr::null_mut()), 
             callback: cb, 
+            userdata: UnsafeCell::new(userdata),
             waker: UnsafeCell::new(None), 
         }
     }
-    pub fn new_boxed(cb: Option<extern "C" fn(*mut c_void)>) -> Box<Self>{
-        Box::new(FfiFuture { 
-            state: AtomicU8::new(PENDING), 
-            result: UnsafeCell::new(ptr::null_mut()), 
-            callback: cb, 
-            waker: UnsafeCell::new(None), 
-        })
+    pub fn new_boxed(cb: Option<extern "C" fn(*mut c_void, *mut c_void)>, userdata: *mut c_void) -> Box<Self>{
+        Box::new(Self::new(cb, userdata))
     }
 
     pub fn cancel(&self){
         self.state.swap(CANCELED, Ordering::AcqRel);
+
+        if let Some(cb) = &self.callback{
+            unsafe { cb(*self.userdata.get(), *self.result.get()); }
+        }
 
         unsafe{
             if let Some(w) = (*self.waker.get()).take(){
@@ -48,7 +49,7 @@ impl FfiFuture{
         }
 
         if let Some(cb) = &self.callback{
-            unsafe { cb(*self.result.get()); }
+            unsafe { cb(*self.userdata.get(), *self.result.get()); }
         }
 
         unsafe{

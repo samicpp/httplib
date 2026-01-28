@@ -138,7 +138,7 @@ dependencies = [
 
 [[package]]
 name = "httplib"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "http",
  "httprs_core",
@@ -148,7 +148,7 @@ dependencies = [
 
 [[package]]
 name = "httprs_core"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "quinn",
  "tokio",

@@ -28,8 +28,8 @@ pub extern "C" fn has_init() -> bool{
 // futures
 
 #[unsafe(no_mangle)]
-pub extern "C" fn ffi_future_new(cb: Option<extern "C" fn(*mut c_void)> ) -> *mut FfiFuture{
-    Box::into_raw(FfiFuture::new_boxed(cb))
+pub extern "C" fn ffi_future_new(cb: Option<extern "C" fn(*mut c_void, *mut c_void)>, userdata: *mut c_void) -> *mut FfiFuture{
+    Box::into_raw(FfiFuture::new_boxed(cb, userdata))
 }
 
 #[unsafe(no_mangle)]
@@ -77,6 +77,16 @@ pub extern "C" fn ffi_future_complete(fut: *const FfiFuture, result: *mut c_void
 #[unsafe(no_mangle)]
 pub extern "C" fn ffi_future_free(fut: *mut FfiFuture) {
     unsafe { drop(Box::from_raw(fut)) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn ffi_future_await(fut: *mut FfiFuture) {
+    unsafe {
+        let rfut = (*fut).to_future();
+        RT.get().unwrap().block_on(async move {
+            rfut.await;
+        })
+    }
 }
 
 
@@ -151,13 +161,19 @@ impl FfiSlice{
             drop(self.to_vec());
         }
     }
-    pub fn to_string(self) -> String{
-        if !self.owned { panic!("not owned") }
-        unsafe { String::from_raw_parts(self.ptr as *mut u8, self.len, self.cap) }
+    pub fn to_string(self) -> Option<String>{
+        if !self.owned {
+            None
+        }
+        else {
+            unsafe { Some(String::from_raw_parts(self.ptr as *mut u8, self.len, self.cap)) }
+        }
     }
-    pub fn to_vec(self) -> Vec<u8>{
-        if !self.owned { panic!("not owned") }
-        unsafe { Vec::from_raw_parts(self.ptr as *mut u8, self.len, self.cap) }
+    pub fn to_vec(self) -> Option<Vec<u8>>{
+        if !self.owned { None }
+        else{
+            unsafe { Some(Vec::from_raw_parts(self.ptr as *mut u8, self.len, self.cap)) }
+        }
     }
     pub fn as_bytes(&self) -> &[u8]{
         unsafe { slice::from_raw_parts(self.ptr, self.len) }
@@ -166,6 +182,9 @@ impl FfiSlice{
         String::from_utf8_lossy(self.as_bytes())
     }
 }
+
+unsafe impl Sync for FfiSlice{}
+unsafe impl Send for FfiSlice{}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn free_slice(slice: FfiSlice) {
