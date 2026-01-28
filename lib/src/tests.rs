@@ -37,7 +37,7 @@ fn httpcpp_test(){
     }
 }
 
-#[ignore = "nonfunctional"]
+#[ignore = "user interaction"]
 #[test]
 fn test_over_ffi(){
     std::thread::spawn(move || {

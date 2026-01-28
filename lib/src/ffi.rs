@@ -10,6 +10,9 @@ pub struct FfiBundle{
     pub http: DynHttpSocket,
     pub addr: SocketAddr,
 }
+pub struct FfiServer{
+    pub boxed: Box<dyn Server + Send>,
+}
 
 #[repr(C)]
 #[derive(Debug)]
@@ -131,25 +134,26 @@ pub extern "C" fn server_new_tcp(fut: *mut FfiFuture, string: *mut i8){
             match TcpServer::new(addr).await{
                 Ok(r) => {
                     let boxed: Box<dyn Server + Send> = Box::new(r);
-                    let ptr = Box::into_raw(boxed);
+                    let wrap = Box::new(FfiServer { boxed });
+                    let ptr = Box::into_raw(wrap);
                     fut.complete(ptr as *mut c_void)
                 },
-                Err(_) => (*fut).cancel(),
+                Err(_) => fut.cancel(),
             }
             let _ = Box::into_raw(fut);
         });
     }
 }
 
-#[allow(improper_ctypes_definitions)]
+// #[allow(improper_ctypes_definitions)]
 #[unsafe(no_mangle)]
-pub extern "C" fn server_accept(fut: *mut FfiFuture, server: *mut (dyn Server + Send)){
+pub extern "C" fn server_accept(fut: *mut FfiFuture, server: *mut FfiServer){
     unsafe {
         let mut server = Box::from_raw(server);
         let fut = Box::from_raw(fut);
 
         RT.get().unwrap().spawn(async move {
-            match server.accept().await{
+            match server.boxed.accept().await{
                 Ok((addr, http)) => {
                     // let boxed = Box::new(http);
                     // let ptr = Box::into_raw(boxed);
@@ -161,7 +165,7 @@ pub extern "C" fn server_accept(fut: *mut FfiFuture, server: *mut (dyn Server + 
 
                     fut.complete(Box::into_raw(Box::new(ffi)) as *mut c_void)
                 },
-                Err(_) => (*fut).cancel(),
+                Err(_) => fut.cancel(),
             }
 
             let _ = Box::into_raw(server);
@@ -169,16 +173,16 @@ pub extern "C" fn server_accept(fut: *mut FfiFuture, server: *mut (dyn Server + 
         });
     }
 }
-#[allow(improper_ctypes_definitions)]
+// #[allow(improper_ctypes_definitions)]
 #[unsafe(no_mangle)]
-pub extern "C" fn server_loop(fut: *mut FfiFuture, server: *mut (dyn Server + Send), cb: extern "C" fn(*mut FfiBundle)){
+pub extern "C" fn server_loop(fut: *mut FfiFuture, server: *mut FfiServer, cb: extern "C" fn(*mut FfiBundle)){
     unsafe {
         let mut ser = Box::from_raw(server);
         let fut = Box::from_raw(fut);
 
         RT.get().unwrap().spawn(async move {
             loop {
-                match ser.accept().await{
+                match ser.boxed.accept().await{
                     Ok((addr, http)) => cb(Box::into_raw(Box::new(FfiBundle { http, addr }))),
                     Err(_) => {
                         fut.cancel();
@@ -302,8 +306,14 @@ pub extern "C" fn http_close(fut: *mut FfiFuture, ffi: *mut FfiBundle, buf: FfiS
 
         RT.get().unwrap().spawn(async move{
             match ffi.http.close(buf.as_bytes()).await{
-                Ok(_) => fut.complete(ptr::null_mut()),
-                Err(_) => fut.cancel(),
+                Ok(_) => {
+                    // println!("normal closure");
+                    fut.complete(ptr::null_mut())
+                },
+                Err(_) => {
+                    // dbg!(e);
+                    fut.cancel();
+                },
             }
 
             let _ = Box::into_raw(ffi);

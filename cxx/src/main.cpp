@@ -1,4 +1,5 @@
 #include<stdio.h>
+#include<iostream>
 #include "ffi.h"
 #include "rsffi.h"
 #include "wrapper.hpp"
@@ -25,7 +26,7 @@ double add_f64(double x, double y){
 }
 
 int server_test(){
-    printf("hello?\n");
+    printf("hello???\n");
     char addr[] = "0.0.0.0:2048";
 
     printf("starting tokio rt\n");
@@ -44,6 +45,7 @@ int server_test(){
         printf("waiting for future\n");
         while (!done) ;
         // ffi_future_await(fut);
+        printf("taking result\n");
         server = ffi_future_take_result(fut);
     }
     printf("server ptr = %p\n", server);
@@ -62,6 +64,7 @@ int server_test(){
         printf("waiting for future\n");
         while (!done) ;
         // ffi_future_await(fut);
+        printf("taking result\n");
         bundle = ffi_future_take_result(fut);
     }
     printf("bundle ptr = %p\n", bundle);
@@ -79,6 +82,7 @@ int server_test(){
     }
 
     http_set_header(bundle, HeaderPair { sliceFromCstr("Content-Type"), sliceFromCstr("text/plain") });
+    http_set_header(bundle, HeaderPair { sliceFromCstr("Connection"), sliceFromCstr("close") });
 
     {
         bool done = false;
@@ -91,6 +95,8 @@ int server_test(){
         // ffi_future_await(fut);
     }
 
+    printf("done, press enter\n");
+    std::cin.get();
 
     return 0;
 }
