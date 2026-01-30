@@ -89,6 +89,19 @@ pub extern "C" fn ffi_future_await(fut: *mut FfiFuture) {
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn ffi_future_get_errno(fut: *mut FfiFuture) -> i32 {
+    unsafe {
+        *(*fut).errno.get()
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn ffi_future_get_errmsg(fut: *mut FfiFuture) -> *const FfiSlice {
+    unsafe {
+        (*fut).errmsg.get()
+    }
+}
+
 
 // slice
 
@@ -185,6 +198,28 @@ impl FfiSlice{
 
 unsafe impl Sync for FfiSlice{}
 unsafe impl Send for FfiSlice{}
+
+impl From<String> for FfiSlice{
+    fn from(value: String) -> Self {
+        Self::from_string(value)
+    }
+}
+impl From<Vec<u8>> for FfiSlice{
+    fn from(value: Vec<u8>) -> Self {
+        Self::from_vec(value)
+    }
+}
+impl From<&str> for FfiSlice{
+    fn from(value: &str) -> Self {
+        Self::from_str(value)
+    }
+}
+impl From<&[u8]> for FfiSlice{
+    fn from(value: &[u8]) -> Self {
+        Self::from_buf(value)
+    }
+}
+
 
 #[unsafe(no_mangle)]
 pub extern "C" fn free_slice(slice: FfiSlice) {

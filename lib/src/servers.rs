@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, pin::Pin};
 
-use http::{extra::PolyHttpSocket, http1::server::Http1Socket, shared::Stream};
+use http::{extra::PolyHttpSocket, http1::server::Http1Socket, http2::PREFACE, shared::Stream};
 use tokio::{io::{ReadHalf, WriteHalf}, net::{TcpListener, TcpStream}};
 
 
@@ -23,8 +23,19 @@ where
 }
 
 pub type DynHttpSocket = PolyHttpSocket<ReadHalf<Box<dyn Stream>>, WriteHalf<Box<dyn Stream>>>;
+pub enum DynStream {
+    Tcp(TcpStream),
+}
+impl DynStream{
+    pub fn to_stream(self) -> Box<dyn Stream>{
+        match self{
+            Self::Tcp(tcp) => Box::new(tcp),
+        }
+    }
+}
+
 pub trait Server{
-    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynHttpSocket), std::io::Error>> + Send + 'a>>;
+    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynStream), std::io::Error>> + Send + 'a>>;
 }
 
 pub struct TcpServer{
@@ -32,13 +43,13 @@ pub struct TcpServer{
     listener: TcpListener,
 }
 impl Server for TcpServer{
-    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynHttpSocket), std::io::Error>> + Send + 'a>> {
+    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynStream), std::io::Error>> + Send + 'a>> {
         Box::pin(async move{
             let (s, addr) = self.listener.accept().await?;
-            let sock: Box<dyn Stream> = Box::new(s);
-            let http = Http1Socket::new(sock, 8 * 1024);
-            let http = PolyHttpSocket::Http1(http);
-            Ok((addr, http))
+            let sock = DynStream::Tcp(s);
+            // let http = Http1Socket::new(sock, 8 * 1024);
+            // let http = PolyHttpSocket::Http1(http);
+            Ok((addr, sock))
         })
     }
 }
@@ -47,5 +58,20 @@ impl TcpServer{
         Ok(Self {
             listener: TcpListener::bind(address).await?,
         })
+    }
+}
+
+pub async fn detect_prot(tcp: &mut TcpStream) -> u8{
+    let mut peek = [0u8; 24];
+    let _ = tcp.peek(&mut peek).await;
+
+    if peek == PREFACE{
+        1 // http2
+    }
+    else if peek[0] == 22{
+        2 // tls
+    }
+    else {
+        0 // idk
     }
 }

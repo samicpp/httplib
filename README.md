@@ -7,7 +7,7 @@ my own ffi http library
 
 ### Protocols
 #### Server-Side
-- [ ] HTTP/1.1
+- [x] HTTP/1.1
 - [ ] WebSocket
 - [ ] HPACK
 - [ ] HTTP/2
@@ -25,6 +25,5 @@ my own ffi http library
 - [ ] QUIC (replaces quinn)
 
 ### Features
-- [ ] ensure 
-- [ ] ~~make apis for app setup~~ other repo with bindings to other langs
-- [ ] FFI compatible
+- [x] FFI compatible
+- [ ] other repo with bindings to other langs

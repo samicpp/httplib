@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 
 use std::net::SocketAddr;
-use http::{extra::PolyHttpSocket, shared::{ReadStream, WriteStream, HttpSocket}};
+use http::{extra::PolyHttpSocket, http1::server::Http1Socket, shared::{HttpSocket, ReadStream, WriteStream}};
 use crate::{httpcpp::{add, add_f64, add_test, server_test}, servers::{Server, TcpServer, tcp_serve}};
 
 #[cfg(test)]
@@ -18,7 +18,8 @@ fn four_is_four(){
 async fn serve_tcp(){
     // tcp_serve("0.0.0.0:1024".to_owned(), |a,h| handler(a,h)).await.unwrap();
     let mut tcp = TcpServer::new("0.0.0.0:1024".to_owned()).await.unwrap();
-    let (addr, http) = tcp.accept().await.unwrap();
+    let (addr, sock) = tcp.accept().await.unwrap();
+    let http = PolyHttpSocket::Http1(Http1Socket::new(sock.to_stream(), 8 * 1024));
     handler(addr, http).await;
 
 }

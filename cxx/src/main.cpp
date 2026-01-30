@@ -70,19 +70,24 @@ int server_test(){
     printf("bundle ptr = %p\n", bundle);
     // if (!bundle) return 3;
 
+    auto ipaddr = get_addr_str(bundle);
+    printf("ip addr = %.*s\n", ipaddr.len, ipaddr.ptr);
+
+    FfiSocket http = http1_new(bundle, 8 * 1024);
+
     {
         bool done = false;
         auto fut = ffi_future_new([](void* userdata, void* result){
             bool* done = static_cast<bool*>(userdata);
             *done = true;
         }, &done);
-        http_read_until_head_complete(fut, bundle);
+        http_read_until_head_complete(fut, http);
         while (!done) ;
         // ffi_future_await(fut);
     }
 
-    http_set_header(bundle, HeaderPair { sliceFromCstr("Content-Type"), sliceFromCstr("text/plain") });
-    http_set_header(bundle, HeaderPair { sliceFromCstr("Connection"), sliceFromCstr("close") });
+    http_set_header(http, HeaderPair { sliceFromCstr("Content-Type"), sliceFromCstr("text/plain") });
+    http_set_header(http, HeaderPair { sliceFromCstr("Connection"), sliceFromCstr("close") });
 
     {
         bool done = false;
@@ -90,7 +95,7 @@ int server_test(){
             bool* done = static_cast<bool*>(userdata);
             *done = true;
         }, &done);
-        http_close(fut, bundle, sliceFromCstr("Hello, world!\n"));
+        http_close(fut, http, sliceFromCstr("Hello, world!\n"));
         while (!done) ;
         // ffi_future_await(fut);
     }

@@ -1,15 +1,17 @@
 use std::{ffi::{CStr, c_void}, net::SocketAddr, ptr};
 
-use http::shared::{HttpClient, HttpMethod, HttpSocket, HttpVersion};
+use http::{http1::server::Http1Socket, shared::{HttpClient, HttpMethod, HttpSocket, HttpVersion}};
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
+use tokio::io::AsyncWriteExt;
 
-use crate::servers::{DynHttpSocket, Server, TcpServer};
+use crate::{errno::{ERROR}, servers::{DynHttpSocket, DynStream, Server, TcpServer, detect_prot}};
 
 
 pub struct FfiBundle{
-    pub http: DynHttpSocket,
+    pub sock: DynStream,
     pub addr: SocketAddr,
 }
+
 pub struct FfiServer{
     pub boxed: Box<dyn Server + Send>,
 }
@@ -138,7 +140,7 @@ pub extern "C" fn server_new_tcp(fut: *mut FfiFuture, string: *mut i8){
                     let ptr = Box::into_raw(wrap);
                     fut.complete(ptr as *mut c_void)
                 },
-                Err(_) => fut.cancel(),
+                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
             let _ = Box::into_raw(fut);
         });
@@ -154,18 +156,18 @@ pub extern "C" fn server_accept(fut: *mut FfiFuture, server: *mut FfiServer){
 
         RT.get().unwrap().spawn(async move {
             match server.boxed.accept().await{
-                Ok((addr, http)) => {
+                Ok((addr, sock)) => {
                     // let boxed = Box::new(http);
                     // let ptr = Box::into_raw(boxed);
 
                     let ffi = FfiBundle {
-                        http,
+                        sock,
                         addr,
                     };
 
                     fut.complete(Box::into_raw(Box::new(ffi)) as *mut c_void)
                 },
-                Err(_) => fut.cancel(),
+                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
 
             let _ = Box::into_raw(server);
@@ -183,9 +185,9 @@ pub extern "C" fn server_loop(fut: *mut FfiFuture, server: *mut FfiServer, cb: e
         RT.get().unwrap().spawn(async move {
             loop {
                 match ser.boxed.accept().await{
-                    Ok((addr, http)) => cb(Box::into_raw(Box::new(FfiBundle { http, addr }))),
-                    Err(_) => {
-                        fut.cancel();
+                    Ok((addr, sock)) => cb(Box::into_raw(Box::new(FfiBundle { sock, addr }))),
+                    Err(e) => {
+                        fut.cancel_with_err(ERROR, e.to_string().into());
                         break;
                     },
                 }
@@ -198,6 +200,18 @@ pub extern "C" fn server_loop(fut: *mut FfiFuture, server: *mut FfiServer, cb: e
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn addr_is_ipv4(ffi: *mut FfiBundle) -> bool{
+    unsafe{
+        (*ffi).addr.is_ipv4()
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn addr_is_ipv6(ffi: *mut FfiBundle) -> bool{
+    unsafe{
+        (*ffi).addr.is_ipv6()
+    }
+}
+#[unsafe(no_mangle)]
 pub extern "C" fn get_addr_str(ffi: *mut FfiBundle) -> FfiSlice{
     unsafe{
         FfiSlice::from_string((*ffi).addr.to_string())
@@ -205,49 +219,15 @@ pub extern "C" fn get_addr_str(ffi: *mut FfiBundle) -> FfiSlice{
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_read_client(fut: *mut FfiFuture, ffi: *mut FfiBundle){
-    unsafe{
+pub extern "C" fn tcp_detect_prot(fut: *mut FfiFuture, ffi: *mut FfiBundle){
+    unsafe {
         let mut ffi = Box::from_raw(ffi);
         let fut = Box::from_raw(fut);
 
-        RT.get().unwrap().spawn(async move{
-            match ffi.http.read_client().await{
-                Ok(_) => fut.complete(ptr::null_mut()),
-                Err(_) => fut.cancel(),
-            }
-
-            let _ = Box::into_raw(ffi);
-            let _ = Box::into_raw(fut);
-        });
-    }
-}
-#[unsafe(no_mangle)]
-pub extern "C" fn http_read_until_complete(fut: *mut FfiFuture, ffi: *mut FfiBundle){
-    unsafe{
-        let mut ffi = Box::from_raw(ffi);
-        let fut = Box::from_raw(fut);
-
-        RT.get().unwrap().spawn(async move{
-            match ffi.http.read_until_complete().await{
-                Ok(_) => fut.complete(ptr::null_mut()),
-                Err(_) => fut.cancel(),
-            }
-
-            let _ = Box::into_raw(ffi);
-            let _ = Box::into_raw(fut);
-        });
-    }
-}
-#[unsafe(no_mangle)]
-pub extern "C" fn http_read_until_head_complete(fut: *mut FfiFuture, ffi: *mut FfiBundle){
-    unsafe{
-        let mut ffi = Box::from_raw(ffi);
-        let fut = Box::from_raw(fut);
-
-        RT.get().unwrap().spawn(async move{
-            match ffi.http.read_until_head_complete().await{
-                Ok(_) => fut.complete(ptr::null_mut()),
-                Err(_) => fut.cancel(),
+        RT.get().unwrap().spawn(async move {
+            match &mut ffi.sock{
+                DynStream::Tcp(tcp) => fut.complete(detect_prot(tcp).await as *mut c_void),
+                // _ => fut.cancel_with_err(TYPE_ERR, "socket not tcp".into()),
             }
 
             let _ = Box::into_raw(ffi);
@@ -257,40 +237,103 @@ pub extern "C" fn http_read_until_head_complete(fut: *mut FfiFuture, ffi: *mut F
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_set_header(ffi: *mut FfiBundle, pair: FfiHeaderPair){
+pub extern "C" fn http1_new(ffi: *mut FfiBundle, bufsize: usize) -> *mut DynHttpSocket{
+    unsafe{
+        let ffi = Box::from_raw(ffi);
+        let http = Http1Socket::new(ffi.sock.to_stream(), bufsize);
+        let dhtt = DynHttpSocket::Http1(http);
+        Box::into_raw(Box::new(dhtt))
+    }
+}
+
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http_read_client(fut: *mut FfiFuture, ffi: *mut DynHttpSocket){
+    unsafe{
+        let mut ffi = Box::from_raw(ffi);
+        let fut = Box::from_raw(fut);
+
+        RT.get().unwrap().spawn(async move{
+            match ffi.read_client().await{
+                Ok(_) => fut.complete(ptr::null_mut()),
+                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+            }
+
+            let _ = Box::into_raw(ffi);
+            let _ = Box::into_raw(fut);
+        });
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn http_read_until_complete(fut: *mut FfiFuture, ffi: *mut DynHttpSocket){
+    unsafe{
+        let mut ffi = Box::from_raw(ffi);
+        let fut = Box::from_raw(fut);
+
+        RT.get().unwrap().spawn(async move{
+            match ffi.read_until_complete().await{
+                Ok(_) => fut.complete(ptr::null_mut()),
+                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+            }
+
+            let _ = Box::into_raw(ffi);
+            let _ = Box::into_raw(fut);
+        });
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn http_read_until_head_complete(fut: *mut FfiFuture, ffi: *mut DynHttpSocket){
+    unsafe{
+        let mut ffi = Box::from_raw(ffi);
+        let fut = Box::from_raw(fut);
+
+        RT.get().unwrap().spawn(async move{
+            match ffi.read_until_head_complete().await{
+                Ok(_) => fut.complete(ptr::null_mut()),
+                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+            }
+
+            let _ = Box::into_raw(ffi);
+            let _ = Box::into_raw(fut);
+        });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http_set_header(ffi: *mut DynHttpSocket, pair: FfiHeaderPair){
     unsafe{
         let name = pair.nam.as_str();
         let value = pair.val.as_str();
 
-        (*ffi).http.set_header(&name, &value);
+        (*ffi).set_header(&name, &value);
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn http_add_header(ffi: *mut FfiBundle, pair: FfiHeaderPair){
+pub extern "C" fn http_add_header(ffi: *mut DynHttpSocket, pair: FfiHeaderPair){
     unsafe{
         let name = pair.nam.as_str();
         let value = pair.val.as_str();
 
-        (*ffi).http.add_header(&name, &value);
+        (*ffi).add_header(&name, &value);
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn http_del_header(ffi: *mut FfiBundle, name: FfiSlice){
+pub extern "C" fn http_del_header(ffi: *mut DynHttpSocket, name: FfiSlice){
     unsafe{
         let name = name.as_str();
-        let _ = (*ffi).http.del_header(&name);
+        let _ = (*ffi).del_header(&name);
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_write(fut: *mut FfiFuture, ffi: *mut FfiBundle, buf: FfiSlice){
+pub extern "C" fn http_write(fut: *mut FfiFuture, ffi: *mut DynHttpSocket, buf: FfiSlice){
     unsafe{
         let mut ffi = Box::from_raw(ffi);
         let fut = Box::from_raw(fut);
         RT.get().unwrap().spawn(async move{
-            match ffi.http.write(buf.as_bytes()).await{
+            match ffi.write(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(_) => fut.cancel(),
+                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
 
             let _ = Box::into_raw(ffi);
@@ -299,20 +342,20 @@ pub extern "C" fn http_write(fut: *mut FfiFuture, ffi: *mut FfiBundle, buf: FfiS
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn http_close(fut: *mut FfiFuture, ffi: *mut FfiBundle, buf: FfiSlice){
+pub extern "C" fn http_close(fut: *mut FfiFuture, ffi: *mut DynHttpSocket, buf: FfiSlice){
     unsafe{
         let mut ffi = Box::from_raw(ffi);
         let fut = Box::from_raw(fut);
 
         RT.get().unwrap().spawn(async move{
-            match ffi.http.close(buf.as_bytes()).await{
+            match ffi.close(buf.as_bytes()).await{
                 Ok(_) => {
                     // println!("normal closure");
                     fut.complete(ptr::null_mut())
                 },
-                Err(_) => {
+                Err(e) => {
                     // dbg!(e);
-                    fut.cancel();
+                    fut.cancel_with_err(ERROR, e.to_string().into());
                 },
             }
 
@@ -323,9 +366,9 @@ pub extern "C" fn http_close(fut: *mut FfiFuture, ffi: *mut FfiBundle, buf: FfiS
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_get_fficlient(ffi: *mut FfiBundle) -> *mut FfiClient {
+pub extern "C" fn http_get_fficlient(ffi: *mut DynHttpSocket) -> *mut FfiClient {
     unsafe{
-        Box::into_raw(Box::new(FfiClient::from(&(*ffi).http.get_client())))
+        Box::into_raw(Box::new(FfiClient::from(&(*ffi).get_client())))
     }
 }
 
@@ -338,32 +381,55 @@ pub extern "C" fn http_free_fficlient(ffi: *mut FfiClient) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_client_has_header(ffi: *mut FfiBundle, name: FfiSlice) -> bool {
+pub extern "C" fn http_client_has_header(ffi: *mut DynHttpSocket, name: FfiSlice) -> bool {
     unsafe{
-        (*ffi).http.get_client().headers.contains_key(name.as_str().as_ref())
+        (*ffi).get_client().headers.contains_key(name.as_str().as_ref())
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_client_has_header_count(ffi: *mut FfiBundle, name: FfiSlice) -> usize {
+pub extern "C" fn http_client_has_header_count(ffi: *mut DynHttpSocket, name: FfiSlice) -> usize {
     unsafe{
-        (*ffi).http.get_client().headers.get(name.as_str().as_ref()).and_then(|h|Some(h.len())).unwrap_or(0)
+        (*ffi).get_client().headers.get(name.as_str().as_ref()).and_then(|h|Some(h.len())).unwrap_or(0)
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_client_get_first_header(ffi: *mut FfiBundle, name: FfiSlice) -> FfiSlice {
+pub extern "C" fn http_client_get_first_header(ffi: *mut DynHttpSocket, name: FfiSlice) -> FfiSlice {
     unsafe{
-        (*ffi).http.get_client().headers.get(name.as_str().as_ref()).and_then(|h|Some(FfiSlice::from_string(h[0].clone()))).unwrap_or(FfiSlice::empty())
+        (*ffi).get_client().headers.get(name.as_str().as_ref()).and_then(|h|Some(FfiSlice::from_string(h[0].clone()))).unwrap_or(FfiSlice::empty())
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_client_get_header(ffi: *mut FfiBundle, name: FfiSlice, index: usize) -> FfiSlice {
+pub extern "C" fn http_client_get_header(ffi: *mut DynHttpSocket, name: FfiSlice, index: usize) -> FfiSlice {
     unsafe{
-        (*ffi).http.get_client().headers.get(name.as_str().as_ref()).and_then(
+        (*ffi).get_client().headers.get(name.as_str().as_ref()).and_then(
             |h|h.get(index)
             .and_then(|h|Some(FfiSlice::from_string(h.clone())))
         ).unwrap_or(FfiSlice::empty())
+    }
+}
+
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http1_direct_write(fut: *mut FfiFuture, ffi: *mut DynHttpSocket, buf: FfiSlice){
+    unsafe{
+        let mut ffi = Box::from_raw(ffi);
+        let fut = Box::from_raw(fut);
+        RT.get().unwrap().spawn(async move{
+            match &mut *ffi{
+                DynHttpSocket::Http1(http) => {
+                    match http.netw.write_all(buf.as_bytes()).await {
+                        Ok(_) => fut.complete(ptr::null_mut()),
+                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    }
+                }
+                // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+            }
+
+            let _ = Box::into_raw(ffi);
+            let _ = Box::into_raw(fut);
+        });
     }
 }

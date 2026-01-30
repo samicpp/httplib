@@ -42,6 +42,7 @@ typedef struct {
 typedef void* FfiFuture;
 typedef void* FfiBundle;
 typedef void* FfiServer;
+typedef void* FfiSocket;
 
 bool init_rt();
 bool has_init();
@@ -54,6 +55,8 @@ void ffi_future_cancel(FfiFuture fut);
 void ffi_future_complete(FfiFuture fut, void* result);
 void ffi_future_free(FfiFuture fut);
 void ffi_future_await(FfiFuture fut);
+int ffi_future_get_errno(FfiFuture fut);
+FfiSlice* ffi_future_get_errmsg(FfiFuture fut);
 
 void free_slice(FfiSlice slice);
 
@@ -63,25 +66,31 @@ void server_new_tcp(FfiFuture fut, char* addr_cstr); // resolves in FfiServer
 void server_accept(FfiFuture fut, FfiServer server); // resolves in FfiBundle
 void server_loop(FfiFuture fut, FfiServer server, void (*cb)(FfiBundle));
 
+bool addr_is_ipv4(FfiBundle bundle);
+bool addr_is_ipv6(FfiBundle bundle);
 FfiSlice get_addr_str(FfiBundle bundle);  // manual free
-void http_read_client(FfiFuture fut, FfiBundle bundle);
-void http_read_until_complete(FfiFuture fut, FfiBundle bundle);
-void http_read_until_head_complete(FfiFuture fut, FfiBundle bundle);
 
-void http_set_header(FfiBundle bundle, HeaderPair pair);
-void http_add_header(FfiBundle bundle, HeaderPair pair);
-void http_del_header(FfiBundle bundle, HeaderPair pair);
+void tcp_detect_prot(FfiFuture fut, FfiBundle bundle);
+FfiSocket http1_new(FfiBundle bundle, size_t bufsize);
 
-void http_write(FfiFuture fut, FfiBundle bundle, FfiSlice bytes);
-void http_close(FfiFuture fut, FfiBundle bundle, FfiSlice bytes);
+void http_read_client(FfiFuture fut, FfiSocket bundle);
+void http_read_until_complete(FfiFuture fut, FfiSocket bundle);
+void http_read_until_head_complete(FfiFuture fut, FfiSocket bundle);
 
-HttpClient http_get_fficlient(FfiBundle bundle);
+void http_set_header(FfiSocket bundle, HeaderPair pair);
+void http_add_header(FfiSocket bundle, HeaderPair pair);
+void http_del_header(FfiSocket bundle, HeaderPair pair);
+
+void http_write(FfiFuture fut, FfiSocket bundle, FfiSlice bytes);
+void http_close(FfiFuture fut, FfiSocket bundle, FfiSlice bytes);
+
+HttpClient http_get_fficlient(FfiSocket bundle);
 void http_free_fficlient(HttpClient client);
 
-bool http_client_has_header(FfiBundle bundle, FfiSlice name);
-size_t http_client_has_header_count(FfiBundle bundle, FfiSlice name);
-FfiSlice http_client_get_first_header(FfiBundle bundle, FfiSlice name);
-FfiSlice http_client_get_header(FfiBundle bundle, FfiSlice name, size_t index);
+bool http_client_has_header(FfiSocket bundle, FfiSlice name);
+size_t http_client_has_header_count(FfiSocket bundle, FfiSlice name);
+FfiSlice http_client_get_first_header(FfiSocket bundle, FfiSlice name);
+FfiSlice http_client_get_header(FfiSocket bundle, FfiSlice name, size_t index);
 
 
 #ifdef __cplusplus

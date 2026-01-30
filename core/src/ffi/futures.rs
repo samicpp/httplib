@@ -1,5 +1,7 @@
 use std::{cell::UnsafeCell, ffi::c_void, future::poll_fn, ptr, sync::{atomic::{AtomicU8, Ordering}}, task::{Poll, Waker}};
 
+use crate::ffi::own::FfiSlice;
+
 pub const PENDING: u8 = 0;
 pub const READY: u8 = 1;
 pub const CANCELED: u8 = 2;
@@ -10,6 +12,9 @@ pub struct FfiFuture{
     pub userdata: UnsafeCell<*mut c_void>,
     pub callback: Option<extern "C" fn(*mut c_void, *mut c_void)>,
     pub waker: UnsafeCell<Option<Waker>>,
+
+    pub errno: UnsafeCell<i32>,
+    pub errmsg: UnsafeCell<FfiSlice>,
 }
 
 impl FfiFuture{
@@ -20,6 +25,8 @@ impl FfiFuture{
             callback: cb, 
             userdata: UnsafeCell::new(userdata),
             waker: UnsafeCell::new(None), 
+            errno: UnsafeCell::new(-1),
+            errmsg: UnsafeCell::new(FfiSlice::empty()),
         }
     }
     pub fn new_boxed(cb: Option<extern "C" fn(*mut c_void, *mut c_void)>, userdata: *mut c_void) -> Box<Self>{
@@ -39,6 +46,25 @@ impl FfiFuture{
             }
         }
     }
+    pub fn cancel_with_err(&self, code: i32, msg: FfiSlice){
+        self.state.swap(CANCELED, Ordering::AcqRel);
+
+        unsafe{
+            (*self.errno.get()) = code;
+            (*self.errmsg.get()) = msg;
+        }
+
+        if let Some(cb) = &self.callback{
+            unsafe { cb(*self.userdata.get(), *self.result.get()); }
+        }
+
+        unsafe{
+            if let Some(w) = (*self.waker.get()).take(){
+                w.wake();
+            }
+        }
+    }
+
     pub fn complete(&self, result: *mut c_void){
         if self.state.swap(READY, Ordering::AcqRel) != PENDING {
             return;
