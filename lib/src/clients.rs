@@ -1,10 +1,12 @@
 use std::{io, sync::Arc};
+use http::{extra::PolyHttpRequest, shared::Stream};
 use tokio_rustls::{rustls, TlsConnector, rustls::ClientConfig};
-use tokio::net::TcpStream;
+use tokio::{io::{ReadHalf, WriteHalf}, net::TcpStream};
 
 
 use crate::DynStream;
 
+pub type DynHttpRequest = PolyHttpRequest<ReadHalf<Box<dyn Stream>>, WriteHalf<Box<dyn Stream>>>;
 
 pub async fn tcp_connect(addr: String) -> io::Result<DynStream> {
     // not alot going on

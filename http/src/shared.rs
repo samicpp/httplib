@@ -229,7 +229,7 @@ pub trait HttpRequest{
     fn del_header(&mut self, header: &str) -> Option<Vec<String>>;
     
     fn set_method(&mut self, method: HttpMethod);
-    fn set_path(&mut self, method: String);
+    fn set_path(&mut self, path: String);
 
     fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
     fn send<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;

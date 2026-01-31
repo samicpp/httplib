@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use crate::{http1::server::Http1Socket, shared::{HttpType, ReadStream, WriteStream, HttpClient, HttpSocket}};
+use crate::{http1::{client::Http1Request, server::Http1Socket}, shared::{HttpClient, HttpMethod, HttpRequest, HttpResponse, HttpSocket, HttpType, ReadStream, WriteStream}};
 
 pub enum PolyHttpSocket<R: ReadStream, W: WriteStream>{
     Http1(Http1Socket<R, W>)
@@ -89,6 +89,101 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
 
 impl<R: ReadStream, W: WriteStream> From<Http1Socket<R, W>> for PolyHttpSocket<R, W> {
     fn from(value: Http1Socket<R, W>) -> Self {
+        Self::Http1(value)
+    }
+}
+
+
+pub enum PolyHttpRequest<R: ReadStream, W: WriteStream>{
+    Http1(Http1Request<R, W>)
+}
+
+impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
+    fn get_type(&self) -> HttpType {
+        match self {
+            Self::Http1(_) => HttpType::Http1,
+        }
+    }
+
+    fn add_header(&mut self, header: &str, value: &str) { 
+        match self {
+            Self::Http1(h) => h.add_header(header, value),
+        }
+    }
+    fn set_header(&mut self, header: &str, value: &str){ 
+        match self {
+            Self::Http1(h) => h.set_header(header, value),
+        } 
+    }
+    fn del_header(&mut self, header: &str) -> Option<Vec<String>>{ 
+        match self {
+            Self::Http1(h) => h.del_header(header),
+        }
+    }
+    
+    fn set_method(&mut self, method: HttpMethod){
+        match self {
+            Self::Http1(h) => h.set_method(method),
+        }
+    }
+    fn set_path(&mut self, method: String){
+        match self {
+            Self::Http1(h) => h.set_path(method),
+        }
+    }
+
+    fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+        Box::pin(async move{
+            match self {
+                Self::Http1(h) => h.write(body).await,
+            }
+        })
+    }
+    fn send<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+        Box::pin(async move{
+            match self {
+                Self::Http1(h) => h.send(body).await,
+            }
+        })
+    }
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+        Box::pin(async move{
+            match self {
+                Self::Http1(h) => h.flush().await,
+            }
+        })
+    }
+
+    fn get_response<'_a>(&'_a self) -> &'_a HttpResponse {
+        match self {
+            Self::Http1(h) => h.get_response(),
+        }
+    }
+    fn read_response<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, std::io::Error>> + Send + '_a>> {
+        Box::pin(async move{
+            match self {
+                Self::Http1(h) => h.read_response().await,
+            }
+        })
+    }
+    fn read_until_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, std::io::Error>> + Send + '_a>> {
+        Box::pin(async move{
+            match self {
+                Self::Http1(h) => h.read_until_complete().await,
+            }
+        })
+    }
+    fn read_until_head_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, std::io::Error>> + Send + '_a>> {
+        Box::pin(async move{
+            match self {
+                Self::Http1(h) => h.read_until_head_complete().await,
+            }
+        })
+    }
+}
+
+impl<R: ReadStream, W: WriteStream> From<Http1Request<R, W>> for PolyHttpRequest<R, W>{
+    fn from(value: Http1Request<R, W>) -> Self {
         Self::Http1(value)
     }
 }
