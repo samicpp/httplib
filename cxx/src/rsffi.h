@@ -73,24 +73,29 @@ FfiSlice get_addr_str(FfiBundle bundle);  // manual free
 void tcp_detect_prot(FfiFuture fut, FfiBundle bundle);
 FfiSocket http1_new(FfiBundle bundle, size_t bufsize);
 
-void http_read_client(FfiFuture fut, FfiSocket bundle);
-void http_read_until_complete(FfiFuture fut, FfiSocket bundle);
-void http_read_until_head_complete(FfiFuture fut, FfiSocket bundle);
+void http_read_client(FfiFuture fut, FfiSocket http);
+void http_read_until_complete(FfiFuture fut, FfiSocket http);
+void http_read_until_head_complete(FfiFuture fut, FfiSocket http);
 
-void http_set_header(FfiSocket bundle, HeaderPair pair);
-void http_add_header(FfiSocket bundle, HeaderPair pair);
-void http_del_header(FfiSocket bundle, HeaderPair pair);
+void http_set_header(FfiSocket http, HeaderPair pair);
+void http_add_header(FfiSocket http, HeaderPair pair);
+void http_del_header(FfiSocket http, HeaderPair pair);
 
-void http_write(FfiFuture fut, FfiSocket bundle, FfiSlice bytes);
-void http_close(FfiFuture fut, FfiSocket bundle, FfiSlice bytes);
+void http_write(FfiFuture fut, FfiSocket http, FfiSlice bytes);
+void http_close(FfiFuture fut, FfiSocket http, FfiSlice bytes);
+void http_flush(FfiFuture fut, FfiSocket http);
 
-HttpClient http_get_fficlient(FfiSocket bundle);
+HttpClient http_get_fficlient(FfiSocket http);
 void http_free_fficlient(HttpClient client);
 
-bool http_client_has_header(FfiSocket bundle, FfiSlice name);
-size_t http_client_has_header_count(FfiSocket bundle, FfiSlice name);
-FfiSlice http_client_get_first_header(FfiSocket bundle, FfiSlice name);
-FfiSlice http_client_get_header(FfiSocket bundle, FfiSlice name, size_t index);
+bool http_client_has_header(FfiSocket http, FfiSlice name);
+size_t http_client_has_header_count(FfiSocket http, FfiSlice name);
+FfiSlice http_client_get_first_header(FfiSocket http, FfiSlice name);
+FfiSlice http_client_get_header(FfiSocket http, FfiSlice name, size_t index);
+
+void http_free(FfiSocket http);
+
+void http1_direct_write(FfiFuture fut, FfiSocket http, FfiSlice bytes);
 
 
 #ifdef __cplusplus

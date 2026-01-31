@@ -78,4 +78,11 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
             }
         })
     }
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+        Box::pin(async move{
+            match self{
+                Self::Http1(h) => h.flush().await,
+            }
+        })
+    }
 }

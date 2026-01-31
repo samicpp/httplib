@@ -71,7 +71,7 @@ int server_test(){
     // if (!bundle) return 3;
 
     auto ipaddr = get_addr_str(bundle);
-    printf("ip addr = %.*s\n", ipaddr.len, ipaddr.ptr);
+    printf("ip addr = %.*s\n", (int)ipaddr.len, ipaddr.ptr);
 
     FfiSocket http = http1_new(bundle, 8 * 1024);
 
@@ -100,8 +100,21 @@ int server_test(){
         // ffi_future_await(fut);
     }
 
-    printf("done, press enter\n");
-    std::cin.get();
+    {
+        bool done = false;
+        auto fut = ffi_future_new([](void* userdata, void* result){
+            bool* done = static_cast<bool*>(userdata);
+            *done = true;
+        }, &done);
+        http_flush(fut, http);
+        while (!done) ;
+        // ffi_future_await(fut);
+    }
+
+    http_free(http);
+
+    // printf("done, press enter\n");
+    // std::cin.get();
 
     return 0;
 }

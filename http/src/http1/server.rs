@@ -223,6 +223,9 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
         }
     }
+    pub async fn flush(&mut self) -> io::Result<()> {
+        self.netw.flush().await
+    }
 
     pub fn reset(&mut self){
         self.client.reset();
@@ -274,6 +277,11 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
     fn close<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
         Box::pin(async move {
             self.close(body).await
+        })
+    }
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+        Box::pin(async move{
+            self.flush().await
         })
     }
 }

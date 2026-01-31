@@ -4,7 +4,7 @@ use http::{http1::server::Http1Socket, shared::{HttpClient, HttpMethod, HttpSock
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use tokio::io::AsyncWriteExt;
 
-use crate::{errno::{ERROR}, servers::{DynHttpSocket, DynStream, Server, TcpServer, detect_prot}};
+use crate::{errno::{ERROR, IO_ERROR}, servers::{DynHttpSocket, DynStream, Server, TcpServer, detect_prot}};
 
 
 pub struct FfiBundle{
@@ -333,7 +333,7 @@ pub extern "C" fn http_write(fut: *mut FfiFuture, ffi: *mut DynHttpSocket, buf: 
         RT.get().unwrap().spawn(async move{
             match ffi.write(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
 
             let _ = Box::into_raw(ffi);
@@ -355,12 +355,28 @@ pub extern "C" fn http_close(fut: *mut FfiFuture, ffi: *mut DynHttpSocket, buf: 
                 },
                 Err(e) => {
                     // dbg!(e);
-                    fut.cancel_with_err(ERROR, e.to_string().into());
+                    fut.cancel_with_err(IO_ERROR, e.to_string().into());
                 },
             }
 
             let _ = Box::into_raw(ffi);
             let _ = Box::into_raw(fut);
+        });
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn http_flush(fut: *mut FfiFuture, ffi: *mut DynHttpSocket){
+    unsafe{
+        let fut = Box::from_raw(fut);
+        let mut ffi = Box::from_raw(ffi);
+        RT.get().unwrap().spawn(async move{
+            match ffi.flush().await {
+                Ok(_) => fut.complete(ptr::null_mut()),
+                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+            }
+
+            let _ = Box::into_raw(fut);
+            let _ = Box::into_raw(ffi);
         });
     }
 }
@@ -371,7 +387,6 @@ pub extern "C" fn http_get_fficlient(ffi: *mut DynHttpSocket) -> *mut FfiClient 
         Box::into_raw(Box::new(FfiClient::from(&(*ffi).get_client())))
     }
 }
-
 #[unsafe(no_mangle)]
 pub extern "C" fn http_free_fficlient(ffi: *mut FfiClient) {
     unsafe { 
@@ -386,21 +401,18 @@ pub extern "C" fn http_client_has_header(ffi: *mut DynHttpSocket, name: FfiSlice
         (*ffi).get_client().headers.contains_key(name.as_str().as_ref())
     }
 }
-
 #[unsafe(no_mangle)]
 pub extern "C" fn http_client_has_header_count(ffi: *mut DynHttpSocket, name: FfiSlice) -> usize {
     unsafe{
         (*ffi).get_client().headers.get(name.as_str().as_ref()).and_then(|h|Some(h.len())).unwrap_or(0)
     }
 }
-
 #[unsafe(no_mangle)]
 pub extern "C" fn http_client_get_first_header(ffi: *mut DynHttpSocket, name: FfiSlice) -> FfiSlice {
     unsafe{
         (*ffi).get_client().headers.get(name.as_str().as_ref()).and_then(|h|Some(FfiSlice::from_string(h[0].clone()))).unwrap_or(FfiSlice::empty())
     }
 }
-
 #[unsafe(no_mangle)]
 pub extern "C" fn http_client_get_header(ffi: *mut DynHttpSocket, name: FfiSlice, index: usize) -> FfiSlice {
     unsafe{
@@ -411,6 +423,12 @@ pub extern "C" fn http_client_get_header(ffi: *mut DynHttpSocket, name: FfiSlice
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn http_free(ffi: *mut DynHttpSocket){
+    unsafe{
+        drop(Box::from_raw(ffi));
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn http1_direct_write(fut: *mut FfiFuture, ffi: *mut DynHttpSocket, buf: FfiSlice){

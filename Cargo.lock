@@ -131,14 +131,14 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.1.5"
+version = "1.1.6"
 dependencies = [
  "tokio",
 ]
 
 [[package]]
 name = "httplib"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "http",
  "httprs_core",

@@ -173,8 +173,9 @@ pub trait HttpSocket{
     fn del_header(&mut self, header: &str) -> Option<Vec<String>>;
     
     fn set_status(&mut self, code: u16, message: String);
-    fn close<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
-    fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+    fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+    fn close<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
 }
 
 // pub type DynHttpSocket = Box<dyn HttpSocket>;
@@ -230,8 +231,9 @@ pub trait HttpRequest{
     fn set_method(&mut self, method: HttpMethod);
     fn set_path(&mut self, method: String);
 
-    fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
-    fn send<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+    fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+    fn send<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
 
     fn get_response<'_a>(&'_a self) -> &'_a HttpResponse;
     fn read_response<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, std::io::Error>> + Send + '_a>>;
