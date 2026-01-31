@@ -86,3 +86,9 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
         })
     }
 }
+
+impl<R: ReadStream, W: WriteStream> From<Http1Socket<R, W>> for PolyHttpSocket<R, W> {
+    fn from(value: Http1Socket<R, W>) -> Self {
+        Self::Http1(value)
+    }
+}

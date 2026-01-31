@@ -3,6 +3,8 @@ use std::{net::SocketAddr, pin::Pin};
 use http::{extra::PolyHttpSocket, http1::server::Http1Socket, http2::PREFACE, shared::Stream};
 use tokio::{io::{ReadHalf, WriteHalf}, net::{TcpListener, TcpStream}};
 
+use crate::DynStream;
+
 
 pub async fn tcp_serve<F, Fut, O>(address: String, handler: F) -> std::io::Result<()>
 where 
@@ -23,16 +25,6 @@ where
 }
 
 pub type DynHttpSocket = PolyHttpSocket<ReadHalf<Box<dyn Stream>>, WriteHalf<Box<dyn Stream>>>;
-pub enum DynStream {
-    Tcp(TcpStream),
-}
-impl DynStream{
-    pub fn to_stream(self) -> Box<dyn Stream>{
-        match self{
-            Self::Tcp(tcp) => Box::new(tcp),
-        }
-    }
-}
 
 pub trait Server{
     fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynStream), std::io::Error>> + Send + 'a>>;

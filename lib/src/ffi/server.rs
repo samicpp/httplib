@@ -4,7 +4,7 @@ use http::{http1::server::Http1Socket, shared::{HttpClient, HttpMethod, HttpSock
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use tokio::io::AsyncWriteExt;
 
-use crate::{errno::{ERROR, IO_ERROR}, servers::{DynHttpSocket, DynStream, Server, TcpServer, detect_prot}};
+use crate::{errno::{ERROR, IO_ERROR, TYPE_ERR}, servers::{DynHttpSocket, Server, TcpServer, detect_prot}, DynStream};
 
 
 pub struct FfiBundle{
@@ -227,7 +227,7 @@ pub extern "C" fn tcp_detect_prot(fut: *mut FfiFuture, ffi: *mut FfiBundle){
         RT.get().unwrap().spawn(async move {
             match &mut ffi.sock{
                 DynStream::Tcp(tcp) => fut.complete(detect_prot(tcp).await as *mut c_void),
-                // _ => fut.cancel_with_err(TYPE_ERR, "socket not tcp".into()),
+                _ => fut.cancel_with_err(TYPE_ERR, "socket not tcp".into()),
             }
 
             let _ = Box::into_raw(ffi);
