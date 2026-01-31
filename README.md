@@ -25,5 +25,6 @@ my own ffi http library
 - [ ] QUIC (replaces quinn)
 
 ### Features
+- [ ] support TLS
 - [x] FFI compatible
 - [ ] other repo with bindings to other langs
