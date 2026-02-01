@@ -3,7 +3,7 @@
 
 use std::net::{SocketAddr, ToSocketAddrs};
 use http::{extra::PolyHttpSocket, http1::{client::Http1Request, server::Http1Socket}, shared::{HttpSocket, HttpRequest, ReadStream, WriteStream}};
-use crate::{clients::tls_connect, httpcpp::{add, add_f64, add_test, server_test}, servers::{Server, TcpServer, tcp_serve}};
+use crate::{clients::{tcp_connect, tls_upgrade}, httpcpp::{add, add_f64, add_test, server_test}, servers::{Server, TcpServer, tcp_serve}};
 
 #[cfg(test)]
 
@@ -51,8 +51,10 @@ fn test_over_ffi(){
 #[ignore = "uses network"]
 #[tokio::test]
 async fn request_google(){
-    let tls = tls_connect("google.com:443", "www.google.com".to_owned()).await.unwrap();
+    let tcp = tcp_connect("google.com:443").await.unwrap();
+    let tls = tls_upgrade(tcp, "www.google.com".to_owned(), vec![b"http/1.1".to_vec()]).await.unwrap();
     let mut req = Http1Request::new(Box::new(tls), 8 * 1024);
+
     req.set_path("/".to_owned());
     req.set_header("Host", "www.google.com");
     req.send(b"").await.unwrap();

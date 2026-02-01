@@ -14,34 +14,42 @@ pub async fn tcp_connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
     TcpStream::connect(addr).await
 }
 
-pub async fn tls_connect<A: ToSocketAddrs>(addr: A, domain: String) -> io::Result<tokio_rustls::client::TlsStream<TcpStream>> {
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default().unwrap();
+pub async fn tls_upgrade(tcp: TcpStream, domain: String, alpn: Vec<Vec<u8>>) -> io::Result<tokio_rustls::client::TlsStream<TcpStream>> {
+    let prov = rustls::crypto::aws_lc_rs::default_provider();
+    let prov = Arc::new(prov);
 
     let mut root = rustls::RootCertStore::empty();
     root.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     
-    let conf = ClientConfig::builder().with_root_certificates(root).with_no_client_auth();
+    let mut conf = ClientConfig::builder_with_provider(prov)
+        .with_protocol_versions(rustls::DEFAULT_VERSIONS).map_err(|_| io::Error::new(io::ErrorKind::Other, "failed setting versions"))?
+        .with_root_certificates(root).with_no_client_auth();
+    conf.alpn_protocols = alpn;
     let conf = Arc::new(conf);
 
     let conn = TlsConnector::from(conf);
-    let tcp: TcpStream = TcpStream::connect(addr).await?;
     let domain = rustls::pki_types::ServerName::try_from(domain).map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid domain"))?;
     
     let tls: tokio_rustls::client::TlsStream<TcpStream> = conn.connect(domain, tcp).await?;
     Ok(tls)
 }
 
-pub async fn tls_connect_no_verification<A: ToSocketAddrs>(addr: A, domain: String) -> io::Result<tokio_rustls::client::TlsStream<TcpStream>> {
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default().unwrap();
+pub async fn tls_upgrade_no_verification(tcp: TcpStream, domain: String, alpn: Vec<Vec<u8>>) -> io::Result<tokio_rustls::client::TlsStream<TcpStream>> {
+    let prov = rustls::crypto::aws_lc_rs::default_provider();
+    let prov = Arc::new(prov);
 
     let mut root = rustls::RootCertStore::empty();
     root.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     
-    let conf = ClientConfig::builder().dangerous().with_custom_certificate_verifier(Arc::new(NoCertVal)).with_no_client_auth();
+    let mut conf = ClientConfig::builder_with_provider(prov)
+        .with_protocol_versions(rustls::DEFAULT_VERSIONS).map_err(|_| io::Error::new(io::ErrorKind::Other, "failed setting versions"))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(NoCertVal))
+        .with_no_client_auth();
+    conf.alpn_protocols = alpn;
     let conf = Arc::new(conf);
 
     let conn = TlsConnector::from(conf);
-    let tcp: TcpStream = TcpStream::connect(addr).await?;
     let domain = rustls::pki_types::ServerName::try_from(domain).map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid domain"))?;
     
     let tls: tokio_rustls::client::TlsStream<TcpStream> = conn.connect(domain, tcp).await?;
