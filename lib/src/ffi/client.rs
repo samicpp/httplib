@@ -194,7 +194,7 @@ pub extern "C" fn http_req_flush(fut: *mut FfiFuture, req: *mut DynHttpRequest){
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http_read_client(fut: *mut FfiFuture, req: *mut DynHttpRequest){
+pub extern "C" fn http_req_read(fut: *mut FfiFuture, req: *mut DynHttpRequest){
     unsafe{
         let mut req = Box::from_raw(req);
         let fut = Box::from_raw(fut);
@@ -211,7 +211,7 @@ pub extern "C" fn http_read_client(fut: *mut FfiFuture, req: *mut DynHttpRequest
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn http_read_until_complete(fut: *mut FfiFuture, req: *mut DynHttpRequest){
+pub extern "C" fn http_req_read_until_complete(fut: *mut FfiFuture, req: *mut DynHttpRequest){
     unsafe{
         let mut req = Box::from_raw(req);
         let fut = Box::from_raw(fut);
@@ -228,7 +228,7 @@ pub extern "C" fn http_read_until_complete(fut: *mut FfiFuture, req: *mut DynHtt
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn http_read_until_head_complete(fut: *mut FfiFuture, req: *mut DynHttpRequest){
+pub extern "C" fn http_req_read_until_head_complete(fut: *mut FfiFuture, req: *mut DynHttpRequest){
     unsafe{
         let mut req = Box::from_raw(req);
         let fut = Box::from_raw(fut);

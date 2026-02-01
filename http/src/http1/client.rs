@@ -184,7 +184,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
                 }
                 else{
                     let ol = self.response.body.len();
-                    self.response.body.resize(self.response.body.len() + len + 1, 0);  // len + 1 allows LF seperated chunks (technically should be CRLF)
+                    self.response.body.resize(self.response.body.len() + len + 2, 0);
                     self.netr.read_exact(&mut self.response.body[ol..]).await?;
                 }
             }
