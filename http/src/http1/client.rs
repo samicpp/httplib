@@ -62,7 +62,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
 
     pub async fn send_head(&mut self) -> io::Result<()> {
         if !self.sent_head && self.version == HttpVersion::Http09 {
-            let head = format!("GET {}", &self.path);
+            let head = format!("GET {}\r\n", &self.path);
             self.netw.write(head.as_bytes()).await?;
             self.sent_head = true;
             Ok(())

@@ -1,6 +1,8 @@
 # httplib
 my own ffi http library 
 
+## Bindings
+I will make FFI bindings to a bunch of languages/frameworks for this library
 
 
 ## TODO
@@ -16,7 +18,7 @@ my own ffi http library
 - [ ] QUIC (replaces quinn)
 
 #### Client-Side
-- [ ] HTTP/1.1
+- [x] HTTP/1.1
 - [ ] WebSocket
 - [ ] HPACK
 - [ ] HTTP/2
@@ -25,6 +27,6 @@ my own ffi http library
 - [ ] QUIC (replaces quinn)
 
 ### Features
-- [ ] support TLS
+- [ ] server support TLS
+- [x] client support TLS
 - [x] FFI compatible
-- [ ] other repo with bindings to other langs

@@ -98,6 +98,16 @@ impl HttpMethod{
         else { Self::Unknown(Some(string.to_owned())) }
     }
 }
+impl From<&str> for HttpMethod{
+    fn from(value: &str) -> Self {
+        Self::from(value)
+    }
+}
+impl From<String> for HttpMethod{
+    fn from(value: String) -> Self {
+        Self::from(&value)
+    }
+}
 
 
 

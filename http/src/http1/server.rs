@@ -68,16 +68,16 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             let fullstr = String::from_utf8_lossy(&self.line_buf);
             let mpv: Vec<&str> = fullstr.splitn(3, ' ').collect();
 
-            if mpv.len() < 2{
-                self.client.valid = false;
-            }
-            else if mpv.len() == 2{
+            if mpv.len() == 2 && mpv[0].eq_ignore_ascii_case("get"){
                 self.client.method = HttpMethod::Get;
                 self.client.path = mpv[1].to_owned();
                 self.client.version = HttpVersion::Http09;
 
                 self.client.head_complete = true;
                 self.client.body_complete = true;
+            }
+            else if mpv.len() != 3{
+                self.client.valid = false;
             }
             else{
                 self.client.method = HttpMethod::from(mpv[0]);

@@ -38,9 +38,6 @@ pub async fn tls_upgrade_no_verification(tcp: TcpStream, domain: String, alpn: V
     let prov = rustls::crypto::aws_lc_rs::default_provider();
     let prov = Arc::new(prov);
 
-    let mut root = rustls::RootCertStore::empty();
-    root.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    
     let mut conf = ClientConfig::builder_with_provider(prov)
         .with_protocol_versions(rustls::DEFAULT_VERSIONS).map_err(|_| io::Error::new(io::ErrorKind::Other, "failed setting versions"))?
         .dangerous()

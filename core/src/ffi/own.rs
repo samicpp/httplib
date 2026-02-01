@@ -219,6 +219,16 @@ impl From<&[u8]> for FfiSlice{
         Self::from_buf(value)
     }
 }
+impl From<&String> for FfiSlice{
+    fn from(value: &String) -> Self {
+        Self::from_str(value)
+    }
+}
+impl From<&Vec<u8>> for FfiSlice{
+    fn from(value: &Vec<u8>) -> Self {
+        Self::from_buf(value)
+    }
+}
 
 
 #[unsafe(no_mangle)]
