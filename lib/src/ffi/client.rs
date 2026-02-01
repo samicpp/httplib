@@ -3,7 +3,7 @@ use std::ffi::{CStr, c_void};
 use http::http1::client::Http1Request;
 use httprs_core::ffi::{futures::FfiFuture, own::RT};
 
-use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn}, errno::IO_ERROR};
+use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn, tls_connect, tls_connect_no_verification}, errno::IO_ERROR};
 
 
 
@@ -15,6 +15,40 @@ pub extern "C" fn tcp_connect(fut: *mut FfiFuture, addr: *mut i8){
 
         RT.get().unwrap().spawn(async move{
             match ntcpconn(addr).await {
+                Ok(tcp) => fut.complete(Box::into_raw(Box::new(tcp)) as *mut c_void),
+                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+            }
+            let _ = Box::into_raw(fut);
+        });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tcp_tls_connect(fut: *mut FfiFuture, addr: *mut i8, domain: *mut i8){
+    unsafe{
+        let addr = CStr::from_ptr(addr).to_string_lossy().to_string();
+        let domain = CStr::from_ptr(domain).to_string_lossy().to_string();
+        let fut = Box::from_raw(fut);
+
+        RT.get().unwrap().spawn(async move{
+            match tls_connect(addr, domain).await {
+                Ok(tcp) => fut.complete(Box::into_raw(Box::new(tcp)) as *mut c_void),
+                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+            }
+            let _ = Box::into_raw(fut);
+        });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tcp_tls_connect_unverified(fut: *mut FfiFuture, addr: *mut i8, domain: *mut i8){
+    unsafe{
+        let addr = CStr::from_ptr(addr).to_string_lossy().to_string();
+        let domain = CStr::from_ptr(domain).to_string_lossy().to_string();
+        let fut = Box::from_raw(fut);
+
+        RT.get().unwrap().spawn(async move{
+            match tls_connect_no_verification(addr, domain).await {
                 Ok(tcp) => fut.complete(Box::into_raw(Box::new(tcp)) as *mut c_void),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }

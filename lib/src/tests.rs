@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use std::net::SocketAddr;
-use http::{extra::PolyHttpSocket, http1::server::Http1Socket, shared::{HttpSocket, ReadStream, WriteStream}};
-use crate::{httpcpp::{add, add_f64, add_test, server_test}, servers::{Server, TcpServer, tcp_serve}};
+use std::net::{SocketAddr, ToSocketAddrs};
+use http::{extra::PolyHttpSocket, http1::{client::Http1Request, server::Http1Socket}, shared::{HttpSocket, HttpRequest, ReadStream, WriteStream}};
+use crate::{clients::tls_connect, httpcpp::{add, add_f64, add_test, server_test}, servers::{Server, TcpServer, tcp_serve}};
 
 #[cfg(test)]
 
@@ -46,4 +46,22 @@ fn test_over_ffi(){
             assert_eq!(server_test(), 0);
         }
     }).join().unwrap();
+}
+
+#[ignore = "uses network"]
+#[tokio::test]
+async fn request_google(){
+    let tls = tls_connect("google.com:443", "www.google.com".to_owned()).await.unwrap();
+    let mut req = Http1Request::new(Box::new(tls), 8 * 1024);
+    req.set_path("/".to_owned());
+    req.set_header("Host", "www.google.com");
+    req.send(b"").await.unwrap();
+    let _ = req.read_until_complete().await.unwrap();
+    let body = req.response.body;
+    req.response.body = Vec::new();
+    
+    println!("body.len() == {}", body.len());
+    dbg!(&req);
+    dbg!(&req.response);
+    println!("{}", String::from_utf8_lossy(&body));
 }

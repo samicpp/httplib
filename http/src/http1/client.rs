@@ -42,7 +42,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
             sent_head: false,
             sent: false,
 
-            path: String::new(),
+            path: "/".to_owned(),
             method: HttpMethod::Get,
             version: HttpVersion::Http11,
             headers: HashMap::new(),
