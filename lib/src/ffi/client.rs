@@ -1,11 +1,86 @@
 use core::slice;
 use std::{ffi::{CStr, c_void}, ptr};
 
-use http::{http1::client::Http1Request, shared::{HttpMethod, HttpRequest, HttpType}};
+use http::{http1::client::Http1Request, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType}};
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 
 use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn, tls_upgrade, tls_upgrade_no_verification}, errno::{ERROR, IO_ERROR}, ffi::{const_enums::methods, server::FfiHeaderPair}};
 
+#[repr(C)]
+#[derive(Debug)]
+pub struct FfiResponse{
+    pub owned: bool,
+    pub valid: bool,
+
+    pub head_complete: bool,
+    pub body_complete: bool,
+
+    pub code: u16,
+    pub status: FfiSlice,
+
+    pub headers_len: usize,
+    pub headers_cap: usize,
+    pub headers: *const FfiHeaderPair,
+    pub body: FfiSlice,
+}
+impl FfiResponse{
+    pub fn from(response: &HttpResponse) -> Self {
+        let mut pairs = Vec::new();
+        response.headers.iter().for_each(|(h,vs)|vs.into_iter().for_each(|v| pairs.push(FfiHeaderPair { nam: FfiSlice::from_str(h), val: FfiSlice::from_str(v) })));
+        let pair_ptr = pairs.as_ptr();
+        let pairs_len = pairs.len();
+        let pairs_cap = pairs.capacity();
+        std::mem::forget(pairs);
+
+        Self { 
+            owned: false,
+            valid: response.valid,
+            head_complete: response.head_complete,
+            body_complete: response.body_complete,
+            code: response.code,
+            status: response.status.as_str().into(),
+            headers_len: pairs_len,
+            headers_cap: pairs_cap,
+            headers: pair_ptr,
+            body: FfiSlice::from_buf(&response.body),
+        }
+    }
+    pub fn from_owned(response: HttpResponse) -> Self {
+        let mut pairs = Vec::new();
+        response.headers.into_iter().for_each(|(h,vs)|vs.into_iter().for_each(|v| pairs.push(FfiHeaderPair { nam: FfiSlice::from_string(h.clone()), val: FfiSlice::from_string(v) })));
+        let pair_ptr = pairs.as_ptr();
+        let pairs_len = pairs.len();
+        let pairs_cap = pairs.capacity();
+        std::mem::forget(pairs);
+
+        Self { 
+            owned: true,
+            valid: response.valid,
+            head_complete: response.head_complete,
+            body_complete: response.body_complete,
+            code: response.code,
+            status: response.status.into(),
+            headers_len: pairs_len,
+            headers_cap: pairs_cap,
+            headers: pair_ptr,
+            body: response.body.into(),
+        }
+    }
+    
+    pub fn free(self){
+        let pairs = unsafe { Vec::from_raw_parts(self.headers as *mut FfiHeaderPair, self.headers_len, self.headers_cap) };
+        
+        if self.owned{
+            self.status.free();
+            self.body.free();
+
+            for h in pairs {
+                h.nam.free();
+                h.val.free();
+            }
+        }
+    }
+}
 
 
 #[unsafe(no_mangle)]
@@ -288,5 +363,25 @@ pub extern "C" fn http_response_get_header(req: *mut DynHttpRequest, name: FfiSl
 pub extern "C" fn http_response_get_body(req: *mut DynHttpRequest) -> FfiSlice {
     unsafe {
         (&(*req).get_response().body).into()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http_req_get_ffires(req: *mut DynHttpRequest) -> *const FfiResponse {
+    unsafe {
+        Box::into_raw(Box::new(FfiResponse::from(&(*req).get_response())))
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn http_req_free_ffires(res: *mut FfiResponse) {
+    unsafe {
+        drop(Box::from_raw(res))
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http_req_free(req: *mut DynHttpRequest){
+    unsafe{
+        drop(Box::from_raw(req));
     }
 }

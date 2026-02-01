@@ -39,10 +39,13 @@ typedef struct {
     FfiSlice scheme;
 } HttpClient;
 
+
 typedef void* FfiFuture;
 typedef void* FfiBundle;
 typedef void* FfiServer;
 typedef void* FfiSocket;
+typedef void* FfiReques;
+typedef void* FfiStream;
 
 bool init_rt();
 bool has_init();
@@ -73,6 +76,8 @@ FfiSlice get_addr_str(FfiBundle bundle);  // manual free
 void tcp_detect_prot(FfiFuture fut, FfiBundle bundle);
 FfiSocket http1_new(FfiBundle bundle, size_t bufsize);
 
+uint8_t http_get_type(FfiSocket http);
+
 void http_read_client(FfiFuture fut, FfiSocket http);
 void http_read_until_complete(FfiFuture fut, FfiSocket http);
 void http_read_until_head_complete(FfiFuture fut, FfiSocket http);
@@ -85,18 +90,83 @@ void http_write(FfiFuture fut, FfiSocket http, FfiSlice bytes);
 void http_close(FfiFuture fut, FfiSocket http, FfiSlice bytes);
 void http_flush(FfiFuture fut, FfiSocket http);
 
-HttpClient http_get_fficlient(FfiSocket http);
-void http_free_fficlient(HttpClient client);
+HttpClient* http_get_fficlient(FfiSocket http);
+void http_free_fficlient(HttpClient* client);
+
+uint8_t http_client_get_method(FfiSocket http);
+FfiSlice http_client_get_method_str(FfiSocket http);
+FfiSlice http_client_get_path(FfiSocket http);
+uint8_t http_client_get_version(FfiSocket http);
 
 bool http_client_has_header(FfiSocket http, FfiSlice name);
 size_t http_client_has_header_count(FfiSocket http, FfiSlice name);
 FfiSlice http_client_get_first_header(FfiSocket http, FfiSlice name);
 FfiSlice http_client_get_header(FfiSocket http, FfiSlice name, size_t index);
 
+FfiSlice http_client_get_body(FfiSocket http);
+
 void http_free(FfiSocket http);
 
 void http1_direct_write(FfiFuture fut, FfiSocket http, FfiSlice bytes);
 
+
+
+typedef struct {
+    bool owned;
+    bool valid;
+
+    bool headComplete;
+    bool bodyComplete;
+
+    uint16_t code;
+    FfiSlice status;
+
+    size_t headersLen;
+    size_t headersCap;
+    HeaderPair* headers;
+    FfiSlice body;
+} HttpResponse;
+
+
+void tcp_connect(FfiFuture fut, char* addr);
+
+void tcp_tls_connect(FfiFuture fut, char* addr, char* domain, size_t len, FfiSlice* alpns);
+void tcp_tls_connect_unverified(FfiFuture fut, char* addr, char* domain, size_t len, FfiSlice* alpns);
+
+FfiReques http1_request_new(FfiStream stream, size_t bufsize);
+
+uint8_t http_req_get_type(FfiReques req);
+
+void http_req_set_header(FfiReques req, HeaderPair pair);
+void http_req_add_header(FfiReques req, HeaderPair pair);
+void http_req_del_header(FfiReques req, HeaderPair pair);
+
+void http_req_set_method_str(FfiReques req, FfiSlice method);
+void http_req_set_method_byte(FfiReques req, uint8_t method);
+void http_req_set_path(FfiReques req, FfiSlice method);
+
+void http_req_write(FfiFuture fut, FfiReques req, FfiSlice bytes);
+void http_req_send(FfiFuture fut, FfiReques req, FfiSlice bytes);
+void http_req_flush(FfiFuture fut, FfiReques req);
+
+void http_req_read_client(FfiFuture fut, FfiReques req);
+void http_req_read_until_complete(FfiFuture fut, FfiReques req);
+void http_req_read_until_head_complete(FfiFuture fut, FfiReques req);
+
+uint16_t http_response_get_status_code(FfiReques req);
+FfiSlice http_response_get_status_msg(FfiReques req);
+
+bool http_req_response_has_header(FfiReques req, FfiSlice name);
+size_t http_req_response_has_header_count(FfiReques req, FfiSlice name);
+FfiSlice http_req_response_get_first_header(FfiReques req, FfiSlice name);
+FfiSlice http_req_response_get_header(FfiReques req, FfiSlice name, size_t index);
+
+FfiSlice http_req_response_get_body(FfiReques req);
+
+HttpResponse* http_req_get_ffires(FfiReques req);
+void http_req_free_ffires(HttpResponse* res);
+
+void http_req_free(FfiReques req);
 
 #ifdef __cplusplus
 }
