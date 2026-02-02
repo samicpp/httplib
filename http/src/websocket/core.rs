@@ -92,13 +92,15 @@ impl WebSocketFrame{
         let ext_len =
         if len == 126 {
             index += 2;
-            source.resize(source.len() + 2, 0);
-            stream.read_u16().await? as u64
+            let int = stream.read_u16().await?;
+            source.extend_from_slice(&int.to_be_bytes());
+            int as u64
         }
         else if len == 127 {
             index += 8;
-            source.resize(source.len() + 8, 0);
-            stream.read_u64().await?
+            let int = stream.read_u64().await?;
+            source.extend_from_slice(&int.to_be_bytes());
+            int
         }
         else {
             0
@@ -161,6 +163,7 @@ impl WebSocketFrame{
 
         let mut buff = Vec::with_capacity(length);
         let mut pos = 0;
+        buff.resize(length, 0);
         
         buff[pos] =
         if fin {
@@ -201,7 +204,44 @@ impl WebSocketFrame{
 
         buff[pos..].copy_from_slice(payload);
 
+        if let Some(mask) = mask{
+            let mut m = 0;
+            for i in pos..buff.len() {
+                buff[i] ^= mask[m];
+                m = (m + 1) & 3;
+            }
+        }
+
         
         buff
+    }
+
+
+    pub fn unmask_in_place(&mut self) -> &[u8] {
+        if self.masked && self.mask.len() == 4 {
+            let mask_start = self.mask.start;
+            let mut m = 0;
+            for i in self.payload.clone() {
+                self.source[i] ^= self.source[mask_start + m];
+                m = (m + 1) & 3;
+            }
+        }
+
+        &self.source[self.payload.clone()]
+    }
+
+    pub fn get_unmasked(&self) -> Vec<u8> {
+        let mut payload = self.source[self.payload.clone()].to_vec();
+        
+        if self.masked && self.mask.len() == 4 {
+            let mask_start = self.mask.start;
+            let mut m = 0;
+            for i in 0..payload.len() {
+                payload[i] ^= self.source[mask_start + m];
+                m = (m + 1) & 3;
+            }
+        }
+        
+        payload
     }
 }
