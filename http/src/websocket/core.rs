@@ -4,17 +4,62 @@ use tokio::io::AsyncReadExt;
 
 use crate::shared::ReadStream;
 
-
+#[derive(Debug, Clone)]
 pub struct WebSocketFrame{
     pub source: Vec<u8>,
     pub fin: bool,
     pub rsv: u8,
-    pub opcode: u8,
+    pub opcode_byte: u8,
     pub masked: bool,
     pub len: u8,
     pub ext_len: u64,
     pub mask: Range<usize>,
     pub payload: Range<usize>,
+
+    pub opcode: WebSocketOpcode,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WebSocketOpcode{
+    Continuation,
+    Text,
+    Binary,
+    OtherNonControl(u8),
+    ConnectionClose,
+    Ping,
+    Pong,
+    OtherControl(u8),
+    Invalid(u8),
+}
+impl From<u8> for WebSocketOpcode{
+    fn from(value: u8) -> Self {
+        match value {
+            0x0 => Self::Continuation,
+            0x1 => Self::Text,
+            0x2 => Self::Binary,
+            0x3 ..= 0x7 => Self::OtherNonControl(value),
+            0x8 => Self::ConnectionClose,
+            0x9 => Self::Ping,
+            0xA => Self::Pong,
+            0xB ..= 0xF => Self::OtherControl(value),
+            _ => Self::Invalid(value),
+        }
+    }
+}
+impl Into<u8> for WebSocketOpcode{
+    fn into(self) -> u8 {
+        match self {
+            Self::Continuation => 0x0,
+            Self::Text => 0x1,
+            Self::Binary => 0x2,
+            Self::OtherNonControl(op) => op,
+            Self::ConnectionClose => 0x8,
+            Self::Ping => 0x9,
+            Self::Pong => 0xA,
+            Self::OtherControl(op) => op,
+            Self::Invalid(op) => op,
+        }
+    }
 }
 
 impl WebSocketFrame{
@@ -24,7 +69,7 @@ impl WebSocketFrame{
 
         let fin = source.get(index)? & 0x80 != 0;
         let rsv = (source.get(index)? & 0x70) >> 4;
-        let opcode = source.get(index)? & 0xf;
+        let opcode_byte = source.get(index)? & 0xf;
         index += 1;
 
         let masked = source.get(index)? & 0x80 != 0;
@@ -65,12 +110,13 @@ impl WebSocketFrame{
             source,
             fin,
             rsv,
-            opcode,
+            opcode_byte,
             masked,
             len,
             ext_len,
             mask,
             payload,
+            opcode: opcode_byte.into(),
         })
     } 
 
@@ -82,7 +128,7 @@ impl WebSocketFrame{
 
         let fin = source[index] & 0x80 != 0;
         let rsv = source[index] & 0x70 >> 4;
-        let opcode = source[index] & 0xf;
+        let opcode_byte = source[index] & 0xf;
         index += 1;
 
         let masked = source[index] & 0x80 != 0;
@@ -133,12 +179,13 @@ impl WebSocketFrame{
             source,
             fin,
             rsv,
-            opcode,
+            opcode_byte,
             masked,
             len,
             ext_len,
             mask,
             payload,
+            opcode: opcode_byte.into(),
         })
     }
 
@@ -243,5 +290,9 @@ impl WebSocketFrame{
         }
         
         payload
+    }
+
+    pub fn get_payload(&self) -> &[u8] {
+        &self.source[self.payload.clone()]
     }
 }
