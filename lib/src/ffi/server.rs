@@ -130,7 +130,7 @@ impl FfiClient{
 pub extern "C" fn server_new_tcp(fut: *mut FfiFuture, string: *mut i8){
     unsafe {
         let addr = CStr::from_ptr(string).to_string_lossy().to_string();
-        let fut = Box::from_raw(fut);
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move {
             match TcpServer::new(addr).await{
@@ -142,7 +142,6 @@ pub extern "C" fn server_new_tcp(fut: *mut FfiFuture, string: *mut i8){
                 },
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
-            let _ = Box::into_raw(fut);
         });
     }
 }
@@ -151,8 +150,8 @@ pub extern "C" fn server_new_tcp(fut: *mut FfiFuture, string: *mut i8){
 #[unsafe(no_mangle)]
 pub extern "C" fn server_accept(fut: *mut FfiFuture, server: *mut FfiServer){
     unsafe {
-        let mut server = Box::from_raw(server);
-        let fut = Box::from_raw(fut);
+        let server = &mut *server;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move {
             match server.boxed.accept().await{
@@ -169,15 +168,12 @@ pub extern "C" fn server_accept(fut: *mut FfiFuture, server: *mut FfiServer){
                 },
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(server);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 // #[allow(improper_ctypes_definitions)]
-#[unsafe(no_mangle)]
-pub extern "C" fn server_loop(fut: *mut FfiFuture, server: *mut FfiServer, cb: extern "C" fn(*mut FfiBundle)){
+// #[unsafe(no_mangle)]
+/*pub extern "C" fn server_loop(fut: *mut FfiFuture, server: *mut FfiServer, cb: extern "C" fn(*mut FfiBundle)){
     unsafe {
         let mut ser = Box::from_raw(server);
         let fut = Box::from_raw(fut);
@@ -197,7 +193,7 @@ pub extern "C" fn server_loop(fut: *mut FfiFuture, server: *mut FfiServer, cb: e
             let _ = Box::into_raw(fut);
         });
     }
-}
+}*/
 
 #[unsafe(no_mangle)]
 pub extern "C" fn addr_is_ipv4(ffi: *mut FfiBundle) -> bool{
@@ -221,17 +217,14 @@ pub extern "C" fn get_addr_str(ffi: *mut FfiBundle) -> FfiSlice{
 #[unsafe(no_mangle)]
 pub extern "C" fn tcp_detect_prot(fut: *mut FfiFuture, ffi: *mut FfiBundle){
     unsafe {
-        let mut ffi = Box::from_raw(ffi);
-        let fut = Box::from_raw(fut);
+        let ffi = &mut *ffi;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move {
             match &mut ffi.sock{
                 DynStream::Tcp(tcp) => fut.complete(detect_prot(tcp).await as *mut c_void),
                 _ => fut.cancel_with_err(TYPE_ERR, "socket not tcp".into()),
             }
-
-            let _ = Box::into_raw(ffi);
-            let _ = Box::into_raw(fut);
         });
     }
 }
@@ -251,8 +244,8 @@ pub extern "C" fn http_get_type(http: *mut DynHttpSocket) -> u8{
     unsafe {
         match (*http).get_type() {
             HttpType::Http1 => 1,
-            HttpType::Http2 => 1,
-            HttpType::Http3 => 1,
+            HttpType::Http2 => 2,
+            HttpType::Http3 => 3,
         }
     }
 }
@@ -260,51 +253,42 @@ pub extern "C" fn http_get_type(http: *mut DynHttpSocket) -> u8{
 #[unsafe(no_mangle)]
 pub extern "C" fn http_read_client(fut: *mut FfiFuture, http: *mut DynHttpSocket){
     unsafe{
-        let mut http = Box::from_raw(http);
-        let fut = Box::from_raw(fut);
+        let http = &mut *http;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match http.read_client().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(http);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn http_read_until_complete(fut: *mut FfiFuture, http: *mut DynHttpSocket){
     unsafe{
-        let mut http = Box::from_raw(http);
-        let fut = Box::from_raw(fut);
+        let http = &mut *http;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match http.read_until_complete().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(http);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn http_read_until_head_complete(fut: *mut FfiFuture, http: *mut DynHttpSocket){
     unsafe{
-        let mut http = Box::from_raw(http);
-        let fut = Box::from_raw(fut);
+        let http = &mut *http;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match http.read_until_head_complete().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(http);
-            let _ = Box::into_raw(fut);
         });
     }
 }
@@ -338,24 +322,21 @@ pub extern "C" fn http_del_header(http: *mut DynHttpSocket, name: FfiSlice){
 #[unsafe(no_mangle)]
 pub extern "C" fn http_write(fut: *mut FfiFuture, http: *mut DynHttpSocket, buf: FfiSlice){
     unsafe{
-        let mut http = Box::from_raw(http);
-        let fut = Box::from_raw(fut);
+        let http = &mut *http;
+        let fut = &*fut;
         RT.get().unwrap().spawn(async move{
             match http.write(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(http);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn http_close(fut: *mut FfiFuture, http: *mut DynHttpSocket, buf: FfiSlice){
     unsafe{
-        let mut http = Box::from_raw(http);
-        let fut = Box::from_raw(fut);
+        let http = &mut *http;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match http.close(buf.as_bytes()).await{
@@ -368,25 +349,19 @@ pub extern "C" fn http_close(fut: *mut FfiFuture, http: *mut DynHttpSocket, buf:
                     fut.cancel_with_err(IO_ERROR, e.to_string().into());
                 },
             }
-
-            let _ = Box::into_raw(http);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn http_flush(fut: *mut FfiFuture, http: *mut DynHttpSocket){
     unsafe{
-        let fut = Box::from_raw(fut);
-        let mut http = Box::from_raw(http);
+        let fut = &*fut;
+        let http = &mut *http;
         RT.get().unwrap().spawn(async move{
             match http.flush().await {
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(fut);
-            let _ = Box::into_raw(http);
         });
     }
 }
@@ -426,7 +401,7 @@ pub extern "C" fn http_client_get_path(http: *mut DynHttpSocket) -> FfiSlice {
 #[unsafe(no_mangle)]
 pub extern "C" fn http_client_get_version(http: *mut DynHttpSocket) -> u8 {
     unsafe {
-        match (*http).get_client().method { HttpMethod::Unknown(_) => 0, HttpMethod::Get => 1, HttpMethod::Head => 2, HttpMethod::Post => 3, HttpMethod::Put => 4, HttpMethod::Delete => 5, HttpMethod::Connect => 6, HttpMethod::Options => 7, HttpMethod::Trace => 8 }
+        match (*http).get_client().version { HttpVersion::Unknown(_) => 0, HttpVersion::Debug => 1, HttpVersion::Http09 => 2, HttpVersion::Http10 => 3, HttpVersion::Http11 => 4, HttpVersion::Http2 => 5, HttpVersion::Http3 => 6 }
     }
 }
 #[unsafe(no_mangle)]
@@ -484,10 +459,10 @@ pub extern "C" fn http_free(http: *mut DynHttpSocket){
 #[unsafe(no_mangle)]
 pub extern "C" fn http1_direct_write(fut: *mut FfiFuture, http: *mut DynHttpSocket, buf: FfiSlice){
     unsafe{
-        let mut http = Box::from_raw(http);
-        let fut = Box::from_raw(fut);
+        let http = &mut *http;
+        let fut = &*fut;
         RT.get().unwrap().spawn(async move{
-            match &mut *http{
+            match http {
                 DynHttpSocket::Http1(one) => {
                     match one.netw.write_all(buf.as_bytes()).await {
                         Ok(_) => fut.complete(ptr::null_mut()),
@@ -496,9 +471,6 @@ pub extern "C" fn http1_direct_write(fut: *mut FfiFuture, http: *mut DynHttpSock
                 }
                 // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
             }
-
-            let _ = Box::into_raw(http);
-            let _ = Box::into_raw(fut);
         });
     }
 }

@@ -1,4 +1,3 @@
-use core::slice;
 use std::{ffi::{CStr, c_void}, ptr};
 
 use http::{http1::client::Http1Request, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType}};
@@ -87,25 +86,25 @@ impl FfiResponse{
 pub extern "C" fn tcp_connect(fut: *mut FfiFuture, addr: *mut i8){
     unsafe{
         let addr = CStr::from_ptr(addr).to_string_lossy().to_string();
-        let fut = Box::from_raw(fut);
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match ntcpconn(addr).await {
                 Ok(tcp) => fut.complete(Box::into_raw(Box::new(DynStream::from(tcp))) as *mut c_void),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
-            let _ = Box::into_raw(fut);
         });
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tcp_tls_connect(fut: *mut FfiFuture, addr: *mut i8, domain: *mut i8, len: usize, alpns: *const FfiSlice){
+pub extern "C" fn tcp_tls_connect(fut: *mut FfiFuture, addr: *mut i8, domain: *mut i8, alpns: *mut i8){
     unsafe{
         let addr = CStr::from_ptr(addr).to_string_lossy().to_string();
         let domain = CStr::from_ptr(domain).to_string_lossy().to_string();
-        let fut = Box::from_raw(fut);
-        let alpns = slice::from_raw_parts(alpns, len).iter().map(|s| s.as_bytes().to_vec()).collect();
+        let alpns = CStr::from_ptr(alpns).to_string_lossy().to_string();
+        let alpns = alpns.split(',').map(|s|s.as_bytes().to_vec()).collect();
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match ntcpconn(addr).await {
@@ -115,17 +114,17 @@ pub extern "C" fn tcp_tls_connect(fut: *mut FfiFuture, addr: *mut i8, domain: *m
                 },
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn tcp_tls_connect_unverified(fut: *mut FfiFuture, addr: *mut i8, domain: *mut i8, len: usize, alpns: *const FfiSlice){
+pub extern "C" fn tcp_tls_connect_unverified(fut: *mut FfiFuture, addr: *mut i8, domain: *mut i8, alpns: *mut i8){
     unsafe{
         let addr = CStr::from_ptr(addr).to_string_lossy().to_string();
         let domain = CStr::from_ptr(domain).to_string_lossy().to_string();
-        let fut = Box::from_raw(fut);
-        let alpns = slice::from_raw_parts(alpns, len).iter().map(|s| s.as_bytes().to_vec()).collect();
+        let alpns = CStr::from_ptr(alpns).to_string_lossy().to_string();
+        let alpns = alpns.split(',').map(|s|s.as_bytes().to_vec()).collect();
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match ntcpconn(addr).await {
@@ -135,7 +134,6 @@ pub extern "C" fn tcp_tls_connect_unverified(fut: *mut FfiFuture, addr: *mut i8,
                 },
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
-            let _ = Box::into_raw(fut);
         });
     }
 }
@@ -154,8 +152,8 @@ pub extern "C" fn http_req_get_type(http: *mut DynHttpRequest) -> u8{
     unsafe {
         match (*http).get_type() {
             HttpType::Http1 => 1,
-            HttpType::Http2 => 1,
-            HttpType::Http3 => 1,
+            HttpType::Http2 => 2,
+            HttpType::Http3 => 3,
         }
     }
 }
@@ -221,49 +219,40 @@ pub extern "C" fn http_req_set_path(req: *mut DynHttpRequest, path: FfiSlice){
 #[unsafe(no_mangle)]
 pub extern "C" fn http_req_write(fut: *mut FfiFuture, req: *mut DynHttpRequest, buf: FfiSlice){
     unsafe{
-        let mut req = Box::from_raw(req);
-        let fut = Box::from_raw(fut);
+        let req = &mut *req;
+        let fut = &*fut;
         RT.get().unwrap().spawn(async move{
             match req.write(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(req);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn http_req_send(fut: *mut FfiFuture, req: *mut DynHttpRequest, buf: FfiSlice){
     unsafe{
-        let mut req = Box::from_raw(req);
-        let fut = Box::from_raw(fut);
+        let req = &mut *req;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match req.send(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(req);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn http_req_flush(fut: *mut FfiFuture, req: *mut DynHttpRequest){
     unsafe{
-        let fut = Box::from_raw(fut);
-        let mut req = Box::from_raw(req);
+        let fut = &*fut;
+        let req = &mut *req;
         RT.get().unwrap().spawn(async move{
             match req.flush().await {
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(fut);
-            let _ = Box::into_raw(req);
         });
     }
 }
@@ -271,51 +260,42 @@ pub extern "C" fn http_req_flush(fut: *mut FfiFuture, req: *mut DynHttpRequest){
 #[unsafe(no_mangle)]
 pub extern "C" fn http_req_read(fut: *mut FfiFuture, req: *mut DynHttpRequest){
     unsafe{
-        let mut req = Box::from_raw(req);
-        let fut = Box::from_raw(fut);
+        let req = &mut *req;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match req.read_response().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(req);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn http_req_read_until_complete(fut: *mut FfiFuture, req: *mut DynHttpRequest){
     unsafe{
-        let mut req = Box::from_raw(req);
-        let fut = Box::from_raw(fut);
+        let req = &mut *req;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match req.read_until_complete().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(req);
-            let _ = Box::into_raw(fut);
         });
     }
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn http_req_read_until_head_complete(fut: *mut FfiFuture, req: *mut DynHttpRequest){
     unsafe{
-        let mut req = Box::from_raw(req);
-        let fut = Box::from_raw(fut);
+        let req = &mut *req;
+        let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
             match req.read_until_head_complete().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
-
-            let _ = Box::into_raw(req);
-            let _ = Box::into_raw(fut);
         });
     }
 }
