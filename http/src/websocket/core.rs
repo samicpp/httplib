@@ -141,6 +141,9 @@ impl WebSocketFrame{
     }
 
     pub fn create(fin: bool, rsv: u8, opcode: u8, mask: Option<&[u8]>, payload: &[u8]) -> Vec<u8> {
+
+        let mask = if let Some(mask) = mask && mask.len() == 4 { Some(mask) } else { None };
+
         let length = 2 +
         if mask.is_some() {
             4
@@ -180,6 +183,23 @@ impl WebSocketFrame{
         } else {
             payload.len() as u8
         };
+        pos += 1;
+
+        if payload.len() > 0xffff {
+            buff[pos..pos + 8].copy_from_slice(&(payload.len() as u64).to_be_bytes());
+            pos += 8;
+        } 
+        else if payload.len() > 0x7d {
+            buff[pos..pos + 2].copy_from_slice(&(payload.len() as u16).to_be_bytes());
+            pos += 2;
+        }
+
+        if let Some(mask) = mask{
+            buff[pos..pos + 4].copy_from_slice(mask);
+            pos += 4;
+        }
+
+        buff[pos..].copy_from_slice(payload);
 
         
         buff
