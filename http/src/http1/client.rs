@@ -204,7 +204,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         Ok(&self.response)
     }
     pub async fn read_until_head_complete(&mut self) -> io::Result<&HttpResponse>{
-        while !self.read_response().await?.head_complete {}
+        while !self.response.head_complete { let _ = self.read_response().await?; }
         Ok(&self.response)
     }
 

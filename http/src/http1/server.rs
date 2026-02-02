@@ -143,7 +143,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
         Ok(&self.client)
     }
     pub async fn read_until_head_complete(&mut self) -> io::Result<&HttpClient>{
-        while !self.read_client().await?.head_complete {}
+        while !self.client.head_complete { let _ = self.read_client().await?; }
         Ok(&self.client)
     }
 
