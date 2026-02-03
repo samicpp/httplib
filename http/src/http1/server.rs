@@ -27,6 +27,8 @@ pub struct Http1Socket<R: ReadStream, W: WriteStream>{
     pub code: u16,
     pub status: String,
     pub headers: HashMap<String, Vec<String>>,
+
+    pub version_override: Option<HttpVersion>,
 }
 
 
@@ -52,6 +54,8 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             code: 200,
             status: "OK".to_string(),
             headers: HashMap::new(),
+
+            version_override: None,
         }
     }
 
@@ -66,6 +70,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             let _ = self.netr.read_until(b'\n', &mut self.line_buf).await?;
 
             let fullstr = String::from_utf8_lossy(&self.line_buf);
+            let fullstr = fullstr.trim_end_matches(['\r', '\n']);
             let mpv: Vec<&str> = fullstr.splitn(3, ' ').collect();
 
             if mpv.len() == 2 && mpv[0].eq_ignore_ascii_case("get"){
@@ -83,8 +88,8 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
                 self.client.method = HttpMethod::from(mpv[0]);
                 self.client.path = mpv[1].to_owned();
                 self.client.version = 
-                if mpv[2].trim().eq_ignore_ascii_case("http/1.0") { HttpVersion::Http10 }
-                else if mpv[2].trim().eq_ignore_ascii_case("http/1.1") { HttpVersion::Http11 }
+                if mpv[2].eq_ignore_ascii_case("http/1.0") { HttpVersion::Http10 }
+                else if mpv[2].eq_ignore_ascii_case("http/1.1") { HttpVersion::Http11 }
                 else { HttpVersion::Unknown(Some(mpv[2].to_owned())) };
             }
 
@@ -122,8 +127,9 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
                 }
                 else{
                     let ol = self.client.body.len();
-                    self.client.body.resize(self.client.body.len() + len + 2, 0);
+                    self.client.body.resize(self.client.body.len() + len, 0);
                     self.netr.read_exact(&mut self.client.body[ol..]).await?;
+                    self.netr.read_until(b'\n', &mut self.line_buf).await?;
                 }
             }
             else if let Some(cl) = self.client.headers.get("content-length") && let Ok(len) = cl[0].parse::<usize>(){
@@ -139,11 +145,11 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
         Ok(&self.client)
     }
     pub async fn read_until_complete(&mut self) -> io::Result<&HttpClient>{
-        while !self.read_client().await?.body_complete {}
+        while self.client.valid && !self.client.body_complete { let _ = self.read_client().await?; }
         Ok(&self.client)
     }
     pub async fn read_until_head_complete(&mut self) -> io::Result<&HttpClient>{
-        while !self.client.head_complete { let _ = self.read_client().await?; }
+        while self.client.valid && !self.client.head_complete { let _ = self.read_client().await?; }
         Ok(&self.client)
     }
 
@@ -167,7 +173,8 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             let headers = self.headers.iter().map(|(h,vs)|vs.iter().map(|v| format!("{}: {}\r\n", h, v)).collect::<String>()).collect::<String>();
             let head = format!(
                 "{} {} {}\r\n{}\r\n", 
-                match &self.client.version { HttpVersion::Unknown(Some(s)) => s.to_owned(), v => format!("{}", v)},
+                if let Some(ov) = &self.version_override { ov.to_string_unknown() }
+                else { self.client.version.to_string_unknown() },
                 self.code,
                 &self.status,
                 headers,

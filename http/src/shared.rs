@@ -55,6 +55,22 @@ impl Display for HttpVersion{
         }
     }
 }
+impl HttpVersion{
+    pub fn is_unknown(&self) -> bool { match self { Self::Unknown(_) => true, _ => false } }
+    pub fn is_debug(&self) -> bool { match self { Self::Debug => true, _ => false } }
+    pub fn is_http09(&self) -> bool { match self { Self::Http09 => true, _ => false } }
+    pub fn is_http10(&self) -> bool { match self { Self::Http10 => true, _ => false } }
+    pub fn is_http11(&self) -> bool { match self { Self::Http11 => true, _ => false } }
+    pub fn is_http2(&self) -> bool { match self { Self::Http2 => true, _ => false } }
+    pub fn is_http3(&self) -> bool { match self { Self::Http3 => true, _ => false } }
+
+    pub fn to_string_unknown(&self) -> String {
+        match &self { 
+            HttpVersion::Unknown(Some(s)) => s.to_owned(),
+            _ => self.to_string()
+        }
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum HttpMethod{
@@ -97,6 +113,16 @@ impl HttpMethod{
         else if string.eq_ignore_ascii_case("trace") { Self::Trace }
         else { Self::Unknown(Some(string.to_owned())) }
     }
+
+    pub fn is_unknown(&self) -> bool { match self { Self::Unknown(_) => true, _ => false } }
+    pub fn is_get(&self) -> bool { match self { Self::Get => true, _ => false } }
+    pub fn is_head(&self) -> bool { match self { Self::Head => true, _ => false } }
+    pub fn is_post(&self) -> bool { match self { Self::Post => true, _ => false } }
+    pub fn is_put(&self) -> bool { match self { Self::Put => true, _ => false } }
+    pub fn is_delete(&self) -> bool { match self { Self::Delete => true, _ => false } }
+    pub fn is_connect(&self) -> bool { match self { Self::Connect => true, _ => false } }
+    pub fn is_options(&self) -> bool { match self { Self::Options => true, _ => false } }
+    pub fn is_trace(&self) -> bool { match self { Self::Trace => true, _ => false } }
 }
 impl From<&str> for HttpMethod{
     fn from(value: &str) -> Self {
@@ -106,6 +132,11 @@ impl From<&str> for HttpMethod{
 impl From<String> for HttpMethod{
     fn from(value: String) -> Self {
         Self::from(&value)
+    }
+}
+impl From<&String> for HttpMethod{
+    fn from(value: &String) -> Self {
+        Self::from(value)
     }
 }
 

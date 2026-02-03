@@ -140,6 +140,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
             let _ = self.netr.read_until(b'\n', &mut self.line_buf).await?;
 
             let fullstr = String::from_utf8_lossy(&self.line_buf);
+            let fullstr = fullstr.trim_end_matches(['\r', '\n']);
             let vcs: Vec<&str> = fullstr.splitn(3, ' ').collect();
             
             if vcs.len() != 3{
@@ -184,8 +185,9 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
                 }
                 else{
                     let ol = self.response.body.len();
-                    self.response.body.resize(self.response.body.len() + len + 2, 0);
+                    self.response.body.resize(self.response.body.len() + len, 0);
                     self.netr.read_exact(&mut self.response.body[ol..]).await?;
+                    self.netr.read_until(b'\n', &mut self.line_buf).await?;
                 }
             }
             else if let Some(cl) = self.response.headers.get("content-length") && let Ok(len) = cl[0].parse::<usize>(){
@@ -200,11 +202,11 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         Ok(&self.response)
     }
     pub async fn read_until_complete(&mut self) -> io::Result<&HttpResponse>{
-        while !self.read_response().await?.body_complete {}
+        while self.response.valid && !self.response.body_complete { let _ = self.read_response().await?; }
         Ok(&self.response)
     }
     pub async fn read_until_head_complete(&mut self) -> io::Result<&HttpResponse>{
-        while !self.response.head_complete { let _ = self.read_response().await?; }
+        while self.response.valid && !self.response.head_complete { let _ = self.read_response().await?; }
         Ok(&self.response)
     }
 
