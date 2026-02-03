@@ -3,7 +3,7 @@
 
 use std::net::{SocketAddr, ToSocketAddrs};
 use http::{extra::PolyHttpSocket, http1::{client::Http1Request, server::Http1Socket}, shared::{HttpRequest, HttpSocket, HttpVersion, ReadStream, WriteStream}};
-use crate::{clients::{tcp_connect, tls_upgrade}, httpcpp::{add, add_f64, add_test, server_test}, servers::{Server, TcpServer, tcp_serve}};
+use crate::{clients::{tcp_connect, tls_upgrade}, httpcpp::{add, add_f64, add_test, server_test}, servers::{TcpServer, tcp_serve}};
 
 #[cfg(test)]
 
@@ -19,7 +19,7 @@ async fn serve_tcp(){
     // tcp_serve("0.0.0.0:1024".to_owned(), |a,h| handler(a,h)).await.unwrap();
     let mut tcp = TcpServer::new("0.0.0.0:1024".to_owned()).await.unwrap();
     let (addr, sock) = tcp.accept().await.unwrap();
-    let mut http = Http1Socket::new(sock.to_stream(), 8 * 1024);
+    let mut http = Http1Socket::new(sock, 8 * 1024);
     // let mut http = PolyHttpSocket::Http1(http);
     
     println!("{}", addr);

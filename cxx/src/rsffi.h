@@ -65,9 +65,10 @@ void free_slice(FfiSlice slice);
 
 long long add_i64(long long x, long long y);
 
-void server_new_tcp(FfiFuture fut, char* addr_cstr); // resolves in FfiServer
-void server_accept(FfiFuture fut, FfiServer server); // resolves in FfiBundle
-void server_loop(FfiFuture fut, FfiServer server, void (*cb)(FfiBundle));
+
+void tcp_server_new(FfiFuture fut, char* addr_cstr); // resolves in FfiServer
+void tcp_server_accept(FfiFuture fut, FfiServer server); // resolves in FfiBundle
+// void server_loop(FfiFuture fut, FfiServer server, void (*cb)(FfiBundle));
 
 bool addr_is_ipv4(FfiBundle bundle);
 bool addr_is_ipv6(FfiBundle bundle);

@@ -1,9 +1,8 @@
-use std::{net::SocketAddr, pin::Pin};
+use std::{io, net::SocketAddr};
 
 use http::{extra::PolyHttpSocket, http1::server::Http1Socket, http2::PREFACE, shared::Stream};
 use tokio::{io::{ReadHalf, WriteHalf}, net::{TcpListener, TcpStream}};
 
-use crate::DynStream;
 
 
 pub async fn tcp_serve<F, Fut, O>(address: String, handler: F) -> std::io::Result<()>
@@ -26,30 +25,21 @@ where
 
 pub type DynHttpSocket = PolyHttpSocket<ReadHalf<Box<dyn Stream>>, WriteHalf<Box<dyn Stream>>>;
 
-pub trait Server{
-    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynStream), std::io::Error>> + Send + 'a>>;
-}
-
 pub struct TcpServer{
     // cb: Arc<dyn Fn(SocketAddr, PolyHttpSocket<ReadHalf<TcpStream>, WriteHalf<TcpStream>>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + Sync + 'static>,
     listener: TcpListener,
-}
-impl Server for TcpServer{
-    fn accept<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(SocketAddr, DynStream), std::io::Error>> + Send + 'a>> {
-        Box::pin(async move{
-            let (s, addr) = self.listener.accept().await?;
-            let sock = DynStream::Tcp(s);
-            // let http = Http1Socket::new(sock, 8 * 1024);
-            // let http = PolyHttpSocket::Http1(http);
-            Ok((addr, sock))
-        })
-    }
 }
 impl TcpServer{
     pub async fn new(address: String) -> std::io::Result<Self>{
         Ok(Self {
             listener: TcpListener::bind(address).await?,
         })
+    }
+    pub async fn accept(&mut self) -> io::Result<(SocketAddr, TcpStream)> {
+            let (sock, addr) = self.listener.accept().await?;
+            // let http = Http1Socket::new(sock, 8 * 1024);
+            // let http = PolyHttpSocket::Http1(http);
+            Ok((addr, sock))
     }
 }
 

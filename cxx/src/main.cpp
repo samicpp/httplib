@@ -41,7 +41,7 @@ int server_test(){
             *done = true;
         }, &done);
         printf("passing future\n");
-        server_new_tcp(fut, addr);
+        tcp_server_new(fut, addr);
         printf("waiting for future\n");
         while (!done) ;
         // ffi_future_await(fut);
@@ -60,7 +60,7 @@ int server_test(){
             *done = true;
         }, &done);
         printf("passing future\n");
-        server_accept(fut, server);
+        tcp_server_accept(fut, server);
         printf("waiting for future\n");
         while (!done) ;
         // ffi_future_await(fut);

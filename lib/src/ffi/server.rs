@@ -4,7 +4,7 @@ use http::{http1::server::Http1Socket, shared::{HttpClient, HttpMethod, HttpSock
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use tokio::io::AsyncWriteExt;
 
-use crate::{errno::{ERROR, IO_ERROR, TYPE_ERR}, servers::{DynHttpSocket, Server, TcpServer, detect_prot}, DynStream};
+use crate::{errno::{ERROR, IO_ERROR, TYPE_ERR}, servers::{DynHttpSocket, TcpServer, detect_prot}, DynStream};
 
 
 pub struct FfiBundle{
@@ -12,9 +12,6 @@ pub struct FfiBundle{
     pub addr: SocketAddr,
 }
 
-pub struct FfiServer{
-    pub boxed: Box<dyn Server + Send>,
-}
 
 #[repr(C)]
 #[derive(Debug)]
@@ -127,17 +124,15 @@ impl FfiClient{
 
 
 #[unsafe(no_mangle)]
-pub extern "C" fn server_new_tcp(fut: *mut FfiFuture, string: *mut i8){
+pub extern "C" fn tcp_server_new(fut: *mut FfiFuture, string: *mut i8){
     unsafe {
         let addr = CStr::from_ptr(string).to_string_lossy().to_string();
         let fut = &*fut;
 
         RT.get().unwrap().spawn(async move {
             match TcpServer::new(addr).await{
-                Ok(r) => {
-                    let boxed: Box<dyn Server + Send> = Box::new(r);
-                    let wrap = Box::new(FfiServer { boxed });
-                    let ptr = Box::into_raw(wrap);
+                Ok(server) => {
+                    let ptr = Box::into_raw(Box::new(server));
                     fut.complete(ptr as *mut c_void)
                 },
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
@@ -148,16 +143,17 @@ pub extern "C" fn server_new_tcp(fut: *mut FfiFuture, string: *mut i8){
 
 // #[allow(improper_ctypes_definitions)]
 #[unsafe(no_mangle)]
-pub extern "C" fn server_accept(fut: *mut FfiFuture, server: *mut FfiServer){
+pub extern "C" fn tcp_server_accept(fut: *mut FfiFuture, server: *mut TcpServer){
     unsafe {
         let server = &mut *server;
         let fut = &*fut;
 
         RT.get().unwrap().spawn(async move {
-            match server.boxed.accept().await{
+            match server.accept().await{
                 Ok((addr, sock)) => {
                     // let boxed = Box::new(http);
                     // let ptr = Box::into_raw(boxed);
+                    let sock = sock.into();
 
                     let ffi = FfiBundle {
                         sock,
