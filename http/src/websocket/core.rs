@@ -127,7 +127,7 @@ impl WebSocketFrame{
         stream.read_exact(&mut source).await?;
 
         let fin = source[index] & 0x80 != 0;
-        let rsv = source[index] & 0x70 >> 4;
+        let rsv = (source[index] & 0x70) >> 4;
         let opcode_byte = source[index] & 0xf;
         index += 1;
 
@@ -191,7 +191,7 @@ impl WebSocketFrame{
 
     pub fn create(fin: bool, rsv: u8, opcode: u8, mask: Option<&[u8]>, payload: &[u8]) -> Vec<u8> {
 
-        let mask = if let Some(mask) = mask && mask.len() == 4 { Some(mask) } else { None };
+        let mask = mask.filter(|mask| mask.len() == 4);
 
         let length = 2 +
         if mask.is_some() {

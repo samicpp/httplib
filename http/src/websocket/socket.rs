@@ -34,37 +34,54 @@ impl<R: ReadStream, W: WriteStream> WebSocket<R, W>{
         Ok(())
     }
 
-    pub async fn send_text(&self, text: &[u8]) -> std::io::Result<()> {
+    pub async fn send_continuation(&self, text: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(true, 0, 0, None, text).await?;
         Ok(())
     }
-    pub async fn send_text_frag(&self, text: &[u8]) -> std::io::Result<()> {
+    pub async fn send_continuation_frag(&self, text: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(false, 0, 0, None, text).await?;
         Ok(())
     }
-    pub async fn send_text_masked(&self, mask: &[u8], text: &[u8]) -> std::io::Result<()> {
+    pub async fn send_continuation_masked(&self, mask: &[u8], text: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(true, 0, 0, Some(mask), text).await?;
         Ok(())
     }
-    pub async fn send_text_masked_frag(&self, mask: &[u8], text: &[u8]) -> std::io::Result<()> {
+    pub async fn send_continuation_masked_frag(&self, mask: &[u8], text: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(false, 0, 0, Some(mask), text).await?;
         Ok(())
     }
 
-    pub async fn send_binary(&self, bin: &[u8]) -> std::io::Result<()> {
+    pub async fn send_text(&self, bin: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(true, 0, 1, None, bin).await?;
         Ok(())
     }
-    pub async fn send_binary_frag(&self, bin: &[u8]) -> std::io::Result<()> {
+    pub async fn send_text_frag(&self, bin: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(false, 0, 1, None, bin).await?;
         Ok(())
     }
-    pub async fn send_binary_masked(&self, mask: &[u8], bin: &[u8]) -> std::io::Result<()> {
+    pub async fn send_text_masked(&self, mask: &[u8], bin: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(true, 0, 1, Some(mask), bin).await?;
         Ok(())
     }
-    pub async fn send_binary_masked_frag(&self, mask: &[u8], bin: &[u8]) -> std::io::Result<()> {
+    pub async fn send_text_masked_frag(&self, mask: &[u8], bin: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(false, 0, 1, Some(mask), bin).await?;
+        Ok(())
+    }
+
+    pub async fn send_binary(&self, bin: &[u8]) -> std::io::Result<()> {
+        self.send_frame_raw(true, 0, 2, None, bin).await?;
+        Ok(())
+    }
+    pub async fn send_binary_frag(&self, bin: &[u8]) -> std::io::Result<()> {
+        self.send_frame_raw(false, 0, 2, None, bin).await?;
+        Ok(())
+    }
+    pub async fn send_binary_masked(&self, mask: &[u8], bin: &[u8]) -> std::io::Result<()> {
+        self.send_frame_raw(true, 0, 2, Some(mask), bin).await?;
+        Ok(())
+    }
+    pub async fn send_binary_masked_frag(&self, mask: &[u8], bin: &[u8]) -> std::io::Result<()> {
+        self.send_frame_raw(false, 0, 2, Some(mask), bin).await?;
         Ok(())
     }
 

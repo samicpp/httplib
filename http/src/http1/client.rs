@@ -1,9 +1,13 @@
 use std::{collections::HashMap, io, pin::Pin};
 
+use rand::Rng;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 
-use crate::{http1::get_chunk, shared::{HttpMethod, HttpType, HttpVersion, ReadStream, Stream, WriteStream, HttpRequest, HttpResponse}};
+use crate::{http1::get_chunk, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType, HttpVersion, ReadStream, Stream, WriteStream}, websocket::socket::{MAGIC, WebSocket}};
 
+use base64::{Engine, engine::general_purpose::STANDARD as b64std};
+
+use sha1::{Sha1, Digest};
 
 
 #[derive(Debug)]
@@ -150,7 +154,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
                 self.response.version = // should always be same version as client
                 if vcs[0].eq_ignore_ascii_case("http/1.0") { HttpVersion::Http10 }
                 else if vcs[0].eq_ignore_ascii_case("http/1.1") { HttpVersion::Http11 }
-                else { HttpVersion::Unknown(Some(vcs[2].to_owned())) };
+                else { HttpVersion::Unknown(Some(vcs[0].to_owned())) };
                 self.response.code = vcs[1].parse().unwrap_or(0);
                 self.response.status = vcs[2].to_owned();
             }
@@ -174,7 +178,6 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
             }
         }
         else if !self.response.body_complete {
-            // TODO: http10 read until EOF
             if let Some(te) = self.response.headers.get("transfer-encoding") && te[0].contains("chunked") {
                 let _ = self.netr.read_until(b'\n', &mut self.line_buf).await?;
                 let string = String::from_utf8_lossy(&self.line_buf);
@@ -193,6 +196,10 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
             else if let Some(cl) = self.response.headers.get("content-length") && let Ok(len) = cl[0].parse::<usize>(){
                 self.response.body.resize(len, 0);
                 self.netr.read_exact(&mut self.response.body).await?;
+                self.response.body_complete = true;
+            }
+            else if self.response.version == HttpVersion::Http10 {
+                self.netr.read_to_end(&mut self.response.body).await?;
                 self.response.body_complete = true;
             }
             else{
@@ -218,6 +225,64 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         self.headers.clear();
         self.sent_head = false;
         self.sent = false;
+    }
+
+    pub async fn websocket_upgrade(&mut self, key: &[u8]) -> io::Result<String> {
+        if key.len() != 16 { return Err(io::Error::new(io::ErrorKind::Other, "key has invalid length")); }
+
+        let wskey = b64std.encode(key);
+        
+        self.set_header("Connection", "upgrade");
+        self.set_header("Upgrade", "websocket");
+        self.set_header("Sec-WebSocket-Version", "13");
+        self.set_header("Sec-WebSocket-Key", &wskey);
+
+        self.send(b"").await?;
+        Ok(wskey)
+    }
+    pub fn websocket_direct(self) -> WebSocket<BufReader<R>, W> {
+        WebSocket::with_split(self.netr, self.netw)
+    }
+    pub async fn websocket_unchecked(mut self) -> io::Result<WebSocket<BufReader<R>, W>> {
+        let mut key = [0; 16];
+        rand::rng().fill(&mut key);
+        let _ = self.websocket_upgrade(&key).await?;
+        
+        Ok(self.websocket_direct())
+    }
+    pub async fn websocket_lazy(mut self) -> io::Result<WebSocket<BufReader<R>, W>>{
+        let mut key = [0; 16];
+        rand::rng().fill(&mut key);
+        let _ = self.websocket_upgrade(&key).await?;
+        
+        let res = self.read_until_head_complete().await?;
+        if res.code != 101 {
+            Err(io::Error::new(io::ErrorKind::Other, "upgrade not accepted"))
+        }
+        else {
+            Ok(self.websocket_direct())
+        }
+    }
+    pub async fn websocket_strict(mut self) -> io::Result<WebSocket<BufReader<R>, W>>{
+        let mut key = [0; 16];
+        rand::rng().fill(&mut key);
+        let bkey = self.websocket_upgrade(&key).await?;
+
+        let mut sha = Sha1::new();
+        sha.update(bkey.as_bytes());
+        sha.update(MAGIC);
+        let acckey = b64std.encode(sha.finalize());
+        
+        let res = self.read_until_head_complete().await?;
+        if res.code != 101 {
+            Err(io::Error::new(io::ErrorKind::Other, "upgrade not accepted"))
+        }
+        else if let Some(reskey) = res.headers.get("sec-websocket-accept") && reskey[0] == acckey {
+            Ok(self.websocket_direct())
+        }
+        else {
+            Err(io::Error::new(io::ErrorKind::Other, "malformed upgrade"))
+        }
     }
 }
 impl<R: ReadStream, W: WriteStream> HttpRequest for Http1Request<R, W>{

@@ -2,10 +2,14 @@ use std::collections::HashMap;
 use std::{pin::Pin};
 
 use std::io;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as b64std;
+use sha1::{Digest, Sha1};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use crate::http1::get_chunk;
 use crate::shared::HttpMethod;
 use crate::shared::{HttpType, HttpVersion, ReadStream, Stream, WriteStream, HttpClient, HttpSocket};
+use crate::websocket::socket::{MAGIC, WebSocket};
 
 
 pub const H2C_UPGRADE: &'static [u8] = b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n";
@@ -116,7 +120,6 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             }
         }
         else if !self.client.body_complete{
-            // TODO: http10 read until EOF
             if let Some(te) = self.client.headers.get("transfer-encoding") && te[0].contains("chunked") {
                 let _ = self.netr.read_until(b'\n', &mut self.line_buf).await?;
                 let string = String::from_utf8_lossy(&self.line_buf);
@@ -135,6 +138,10 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             else if let Some(cl) = self.client.headers.get("content-length") && let Ok(len) = cl[0].parse::<usize>(){
                 self.client.body.resize(len, 0);
                 self.netr.read_exact(&mut self.client.body).await?;
+                self.client.body_complete = true;
+            }
+            else if self.client.version == HttpVersion::Http10 {
+                self.netr.read_to_end(&mut self.client.body).await?;
                 self.client.body_complete = true;
             }
             else{
@@ -241,6 +248,32 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
         self.headers.clear();
         self.sent_head = false;
         self.closed = false;
+    }
+
+    pub fn websocket_direct(self) -> WebSocket<BufReader<R>, W> {
+        WebSocket::with_split(self.netr, self.netw)
+    }
+    pub async fn websocket_with_key(mut self, mut wskey: Vec<u8>) -> io::Result<WebSocket<BufReader<R>, W>> {
+        wskey.extend_from_slice(MAGIC);
+
+        let reskey = Sha1::digest(&wskey);
+        let reskey = b64std.encode(reskey);
+
+        self.code = 101;
+        self.status = "Switching Protocols".to_owned();
+        self.set_header("Connection", "upgrade");
+        self.set_header("Upgrade", "websocket");
+        self.set_header("Sec-WebSocket-Accept", &reskey);
+        self.close(b"").await?;
+
+        Ok(self.websocket_direct())
+    }
+    pub async fn websocket(self) -> io::Result<WebSocket<BufReader<R>, W>> {
+        let key = self.client.headers.get("sec-websocket-key").map_or_else(
+            || Err(io::Error::new(io::ErrorKind::Other, "missing ws key")), 
+            |k| Ok(k[0].as_bytes().to_vec())
+        )?;
+        self.websocket_with_key(key).await
     }
 }
 
