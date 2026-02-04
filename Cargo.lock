@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.2.5"
+version = "1.2.6"
 dependencies = [
  "base64",
  "rand",
@@ -240,11 +240,12 @@ dependencies = [
 
 [[package]]
 name = "httplib"
-version = "1.4.5"
+version = "1.5.0"
 dependencies = [
  "http",
  "httprs_core",
  "quinn",
+ "rand",
  "rustls",
  "tokio",
  "tokio-rustls",
@@ -253,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "httprs_core"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "tokio",
 ]
@@ -978,9 +979,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.5"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12bed680863276c63889429bfd6cab3b99943659923822de1c8a39c49e4d722c"
+checksum = "22cfaf3c063993ff62e73cb4311efde4db1efb31ab78a3e5c457939ad5cc0bed"
 dependencies = [
  "rustls-pki-types",
 ]

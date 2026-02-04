@@ -229,6 +229,15 @@ impl From<&Vec<u8>> for FfiSlice{
         Self::from_buf(value)
     }
 }
+impl Drop for FfiSlice{
+    fn drop(&mut self) {
+        unsafe {
+            if self.owned {
+                drop(Vec::from_raw_parts(self.ptr as *mut u8, self.len, self.cap));
+            }
+        }
+    }
+}
 
 
 #[unsafe(no_mangle)]

@@ -365,3 +365,41 @@ pub extern "C" fn http_req_free(req: *mut DynHttpRequest){
         drop(Box::from_raw(req));
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http1_websocket_strict(fut: *mut FfiFuture, http: *mut DynHttpRequest){
+    unsafe{
+        let http = Box::from_raw(http);
+        let fut = &*fut;
+        RT.get().unwrap().spawn(async move{
+            match *http {
+                DynHttpRequest::Http1(one) => {
+                    match one.websocket_strict().await {
+                        Ok(ws) => fut.complete(Box::into_raw(Box::new(ws)) as *mut c_void),
+                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    }
+                }
+                // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+            }
+        });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http1_websocket_lazy(fut: *mut FfiFuture, http: *mut DynHttpRequest){
+    unsafe{
+        let http = Box::from_raw(http);
+        let fut = &*fut;
+        RT.get().unwrap().spawn(async move{
+            match *http {
+                DynHttpRequest::Http1(one) => {
+                    match one.websocket_lazy().await {
+                        Ok(ws) => fut.complete(Box::into_raw(Box::new(ws)) as *mut c_void),
+                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    }
+                }
+                // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+            }
+        });
+    }
+}

@@ -33,6 +33,10 @@ impl<R: ReadStream, W: WriteStream> WebSocket<R, W>{
         self.netw.lock().await.write(&frame).await?;
         Ok(())
     }
+    pub async fn flush(&self) -> std::io::Result<()> {
+        self.netw.lock().await.flush().await?;
+        Ok(())
+    }
 
     pub async fn send_continuation(&self, text: &[u8]) -> std::io::Result<()> {
         self.send_frame_raw(true, 0, 0, None, text).await?;

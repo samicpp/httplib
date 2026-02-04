@@ -470,3 +470,22 @@ pub extern "C" fn http1_direct_write(fut: *mut FfiFuture, http: *mut DynHttpSock
         });
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http1_websocket(fut: *mut FfiFuture, http: *mut DynHttpSocket){
+    unsafe{
+        let http = Box::from_raw(http);
+        let fut = &*fut;
+        RT.get().unwrap().spawn(async move{
+            match *http {
+                DynHttpSocket::Http1(one) => {
+                    match one.websocket().await {
+                        Ok(ws) => fut.complete(Box::into_raw(Box::new(ws)) as *mut c_void),
+                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    }
+                }
+                // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+            }
+        });
+    }
+}
