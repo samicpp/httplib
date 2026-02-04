@@ -10,7 +10,7 @@ I will make FFI bindings to a bunch of languages/frameworks for this library
 ### Protocols
 #### Server-Side
 - [x] HTTP/1.1
-- [ ] WebSocket
+- [x] WebSocket
 - [ ] HPACK
 - [ ] HTTP/2
 - [ ] QPACK 
@@ -19,7 +19,7 @@ I will make FFI bindings to a bunch of languages/frameworks for this library
 
 #### Client-Side
 - [x] HTTP/1.1
-- [ ] WebSocket
+- [x] WebSocket
 - [ ] HPACK
 - [ ] HTTP/2
 - [ ] QPACK 
