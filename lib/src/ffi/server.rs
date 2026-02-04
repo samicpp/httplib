@@ -224,6 +224,26 @@ pub extern "C" fn tcp_detect_prot(fut: *mut FfiFuture, ffi: *mut FfiBundle){
         });
     }
 }
+#[unsafe(no_mangle)]
+pub extern "C" fn tcp_peek(fut: *mut FfiFuture, ffi: *mut FfiBundle, buf: *mut FfiSlice){
+    unsafe {
+        let ffi = &mut *ffi;
+        let fut = &*fut;
+        let buf = (*buf).as_bytes_mut();
+
+        RT.get().unwrap().spawn(async move {
+            if let DynStream::Tcp(tcp) = &ffi.sock {
+                match tcp.peek(buf).await {
+                    Ok(_) => fut.complete(ptr::null_mut()),
+                    Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                }
+            }
+            else{
+                fut.cancel_with_err(TYPE_ERR, "socket not tcp".into())
+            }
+        });
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn http1_new(ffi: *mut FfiBundle, bufsize: usize) -> *mut DynHttpSocket{
