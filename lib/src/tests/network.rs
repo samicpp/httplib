@@ -1,28 +1,11 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
+#![cfg(test)]
 
 use std::{net::{SocketAddr, ToSocketAddrs}, sync::{Arc, atomic::AtomicBool}};
 use http::{extra::PolyHttpSocket, http1::{client::Http1Request, server::Http1Socket}, shared::{HttpRequest, HttpSocket, HttpVersion, ReadStream, WriteStream}, websocket::{core::WebSocketOpcode, socket::WebSocket}};
 use tokio::{io::AsyncReadExt, net::TcpListener, sync::Mutex};
-use crate::{clients::{tcp_connect, tls_upgrade}, httpcpp::{add, add_f64, add_test, server_test}, servers::{TcpServer, tcp_serve}};
-
-#[cfg(test)]
-
-
-#[test]
-fn four_is_four(){
-    assert!(4 == 4);
-}
-
-
-#[test]
-fn httpcpp_test(){
-    unsafe{
-        assert_eq!(add_f64(1.0, 2.0), 3.0);
-        assert_eq!(add(1, 2), 3);
-        assert_eq!(add_test(), 0);
-    }
-}
+use crate::{clients::{tcp_connect, tls_upgrade}, httpcpp::server_test, servers::{TcpServer, tcp_serve}};
 
 
 #[ignore = "requires user input"]
@@ -290,3 +273,4 @@ async fn ws_mirror(){
         println!("loop");
     }
 }
+

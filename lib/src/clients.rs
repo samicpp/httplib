@@ -4,6 +4,8 @@ use rustls::{SignatureScheme, client::danger::{HandshakeSignatureValid, ServerCe
 use tokio_rustls::{TlsConnector, rustls::ClientConfig};
 use tokio::{io::{ReadHalf, WriteHalf}, net::{TcpStream, ToSocketAddrs}};
 
+use crate::PROVIDER;
+
 
 // use crate::DynStream;
 
@@ -15,8 +17,7 @@ pub async fn tcp_connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
 }
 
 pub async fn tls_upgrade(tcp: TcpStream, domain: String, alpn: Vec<Vec<u8>>) -> io::Result<tokio_rustls::client::TlsStream<TcpStream>> {
-    let prov = rustls::crypto::aws_lc_rs::default_provider();
-    let prov = Arc::new(prov);
+    let prov = (*PROVIDER).clone();
 
     let mut root = rustls::RootCertStore::empty();
     root.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -35,8 +36,7 @@ pub async fn tls_upgrade(tcp: TcpStream, domain: String, alpn: Vec<Vec<u8>>) -> 
 }
 
 pub async fn tls_upgrade_no_verification(tcp: TcpStream, domain: String, alpn: Vec<Vec<u8>>) -> io::Result<tokio_rustls::client::TlsStream<TcpStream>> {
-    let prov = rustls::crypto::aws_lc_rs::default_provider();
-    let prov = Arc::new(prov);
+    let prov = (*PROVIDER).clone();
 
     let mut conf = ClientConfig::builder_with_provider(prov)
         .with_protocol_versions(rustls::DEFAULT_VERSIONS).map_err(|_| io::Error::new(io::ErrorKind::Other, "failed setting versions"))?

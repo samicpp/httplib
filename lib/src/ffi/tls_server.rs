@@ -1,0 +1,124 @@
+use std::{ffi::{CStr, c_void}, ptr, sync::Arc};
+
+use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
+use rustls::{ServerConfig, pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject}, sign::CertifiedKey};
+use tokio_rustls::TlsAcceptor;
+
+use crate::{DynStream, PROVIDER, errno::{ERROR, TYPE_ERR}, ffi::server::FfiBundle, servers::TlsCertSelector};
+
+
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tls_config_single_cert_pem(certs: FfiSlice, key: FfiSlice, alpns: *mut i8) -> *const ServerConfig {
+    let prov = (*PROVIDER).clone();
+
+    let certs = CertificateDer::pem_reader_iter(certs.as_bytes()).map(|c| c.and_then(|c| Ok(c.into_owned()))).collect::<Result<Vec<_>, _>>();
+    let key = PrivateKeyDer::from_pem_reader(key.as_bytes());
+
+    let alpns = unsafe { CStr::from_ptr(alpns).to_string_lossy().to_string() };
+    let alpns = alpns.split(',').map(|s|s.as_bytes().to_vec()).collect();
+
+    if 
+        let Ok(certs) = certs && 
+        let Ok(key) = key && 
+        let Ok(build) = ServerConfig::builder_with_provider(prov).with_protocol_versions(rustls::DEFAULT_VERSIONS) && 
+        let Ok(mut conf) = build.with_no_client_auth().with_single_cert(certs, key) 
+    {
+        conf.alpn_protocols = alpns;
+        Arc::into_raw(Arc::new(conf))
+    }
+    else {
+        ptr::null()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tls_config_sni_builder() -> *const TlsCertSelector {
+    let builder = TlsCertSelector::new();
+
+    Arc::into_raw(builder.to_arc())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tls_config_sni_builder_with_pem(def_certs: FfiSlice, def_key: FfiSlice) -> *const TlsCertSelector {
+    let certs = if let Ok(certs) = CertificateDer::pem_reader_iter(def_certs.as_bytes()).map(|c| c.and_then(|c| Ok(c.into_owned()))).collect::<Result<Vec<_>, _>>() { certs } else { return ptr::null() };
+    let key = if let Ok(key) = PrivateKeyDer::from_pem_reader(def_key.as_bytes()) { key } else { return ptr::null() };
+    let cert = if let Ok(cert) = CertifiedKey::from_der(certs, key, &PROVIDER) { cert } else { return ptr::null() };
+
+    let builder = TlsCertSelector::with_default(cert);
+
+    Arc::into_raw(builder.to_arc())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tls_config_sni_add_pem(sni_build: *const TlsCertSelector, domain: *mut i8, certs: FfiSlice, key: FfiSlice) -> bool {
+    unsafe {
+        let domain = CStr::from_ptr(domain).to_string_lossy().to_string();
+
+        let certs = if let Ok(certs) = CertificateDer::pem_reader_iter(certs.as_bytes()).map(|c| c.and_then(|c| Ok(c.into_owned()))).collect::<Result<Vec<_>, _>>() { certs } else { return false };
+        let key = if let Ok(key) = PrivateKeyDer::from_pem_reader(key.as_bytes()) { key } else { return false };
+        let cert = if let Ok(cert) = CertifiedKey::from_der(certs, key, &PROVIDER) { cert } else { return false };
+
+        (*sni_build).add_cert(domain, cert);
+        true
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tls_config_sni_builder_build(sni_build: *const TlsCertSelector, alpns: *mut i8) -> *const ServerConfig {
+    unsafe{
+        let sni = Arc::from_raw(sni_build);
+        let prov = (*PROVIDER).clone();
+
+        let alpns = CStr::from_ptr(alpns).to_string_lossy().to_string();
+        let alpns = alpns.split(',').map(|s|s.as_bytes().to_vec()).collect();
+        
+        if let Ok(build) = ServerConfig::builder_with_provider(prov).with_protocol_versions(rustls::DEFAULT_VERSIONS) {
+            let mut conf = build.with_no_client_auth().with_cert_resolver(sni);
+            conf.alpn_protocols = alpns;
+            
+            let conf = Arc::new(conf);
+            Arc::into_raw(conf)
+        }
+        else{
+            ptr::null()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tls_config_free(conf: *const ServerConfig) {
+    unsafe {
+        drop(Arc::from_raw(conf));
+    }
+}
+
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tcp_upgrade_tls(fut: *mut FfiFuture, ffi: *mut FfiBundle, conf: *const ServerConfig){
+    unsafe {
+        let ffi = Box::from_raw(ffi);
+        let fut = &*fut;
+        let con = {
+            Arc::increment_strong_count(conf);
+            Arc::from_raw(conf)
+        };
+        let acc = TlsAcceptor::from(con);
+
+        RT.get().unwrap().spawn(async move {
+            if let DynStream::Tcp(tcp) = ffi.sock {
+                match acc.accept(tcp).await {
+                    Ok(tls) => {
+                        let stream: DynStream = tls.into();
+                        let stream = Box::new(stream);
+                        fut.complete(Box::into_raw(stream) as *mut c_void);
+                    },
+                    Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                }
+            }
+            else{
+                fut.cancel_with_err(TYPE_ERR, "socket not tcp".into())
+            }
+        });
+    }
+}
