@@ -4,8 +4,11 @@ pub mod huffman;
 pub mod encoder;
 pub mod decoder;
 
+// https://datatracker.ietf.org/doc/html/rfc7541
 
-pub static STATIC_TABLE: &'static [(&'static [u8], &'static [u8]); 61] = &[
+
+// Appendix A
+pub const STATIC_TABLE: &'static [(&'static [u8], &'static [u8]); 61] = &[
     (b":authority", b""),
     (b":method", b"GET"),
     (b":method", b"POST"),
@@ -69,6 +72,75 @@ pub static STATIC_TABLE: &'static [(&'static [u8], &'static [u8]); 61] = &[
     (b"www-authenticate", b""),
 ];
 
+#[derive(Debug, Clone)]
+pub enum StaticTable<'a>{
+    Borrow(&'a [(&'a [u8], &'a [u8])]),
+    Owned(Vec<(Vec<u8>, Vec<u8>)>),
+}
+impl<'a> StaticTable<'a>{
+    pub fn is_owned(&self) -> bool {
+        if let Self::Owned(_) = self { true }
+        else { false }
+    }
+    pub fn is_borrow(&self) -> bool {
+        if let Self::Borrow(_) = self { true }
+        else { false }
+    }
+    pub fn to_owned(&mut self) {
+        match self {
+            Self::Borrow(b) => {
+                let clone = b.iter().map(|(h, v)| (h.to_vec(), v.to_vec())).collect();
+                *self = Self::Owned(clone);
+            },
+            _ => (),
+        }
+    }
+    pub fn into_owned(self) -> Self {
+        match self {
+            Self::Borrow(b) => {
+                let clone = b.iter().map(|(h, v)| (h.to_vec(), v.to_vec())).collect();
+                Self::Owned(clone)
+            },
+            Self::Owned(v) => Self::Owned(v),
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<(&[u8], &[u8])> {
+        match self {
+            Self::Borrow(b) => {
+                b.get(index).and_then(|(h, v)| Some((*h, *v)))
+            }
+            Self::Owned(v) => {
+                v.get(index).and_then(|(h, v)| Some((h.as_slice(), v.as_slice())))
+            }
+        }
+    }
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Borrow(b) => b.len(),
+            Self::Owned(o) => o.len(),
+        }
+    }
+}
+impl<'a> From<&'a [(&'a [u8], &'a [u8])]> for StaticTable<'a> {
+    fn from(value: &'a [(&'a [u8], &'a [u8])]) -> Self {
+        Self::Borrow(value)
+    }
+}
+impl From<Vec<(Vec<u8>, Vec<u8>)>> for StaticTable<'static> {
+    fn from(value: Vec<(Vec<u8>, Vec<u8>)>) -> Self {
+        Self::Owned(value)
+    }
+}
+impl<'a> Into<Vec<(Vec<u8>, Vec<u8>)>> for StaticTable<'a> {
+    fn into(self) -> Vec<(Vec<u8>, Vec<u8>)> {
+        match self{
+            Self::Borrow(b) => b.iter().map(|(h, v)| (h.to_vec(), v.to_vec())).collect(),
+            Self::Owned(v) => v,
+        }
+    }
+}
+
 pub struct DynamicTable {
     pub size: usize,
     pub table_size: usize,
@@ -100,5 +172,43 @@ impl DynamicTable {
     pub fn resize(&mut self, new_size: usize) {
         self.table_size = new_size;
         self.evict();
+    }
+}
+
+
+// no reason for public fields
+pub struct Biterator<'a, I: Iterator<Item = &'a u8>> {
+    buff_iter: I,
+    current: Option<&'a u8>,
+    pos: u8,
+}
+impl<'a, I: Iterator<Item = &'a u8>> Biterator<'a, I>{
+    pub fn new(iter: I) -> Biterator<'a, I> {
+        Self {
+            buff_iter: iter,
+            current: None,
+            pos: 7,
+        }
+    }
+}
+impl<'a, I: Iterator<Item = &'a u8>> Iterator for Biterator<'a, I> {
+    type Item = bool;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current.is_none() {
+            self.current = Some(self.buff_iter.next()?);
+            self.pos = 7;
+        }
+
+        let byte = unsafe{ *self.current.unwrap_unchecked() };
+        let bit = byte & (1 << self.pos) != 0;
+        
+        if self.pos == 0 {
+            self.current = None;
+        }
+        else {
+            self.pos -= 1;
+        }
+
+        Some(bit)
     }
 }

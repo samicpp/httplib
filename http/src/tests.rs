@@ -1,6 +1,6 @@
 #[cfg(test)]
 
-use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame};
+use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame, http2::hpack::{Biterator, decoder::Decoder}};
 
 #[test]
 fn two_is_two(){
@@ -113,4 +113,30 @@ async fn websocket(){
     sws.send_close(1000, b"message").await.unwrap();
 
     f0.await.unwrap();
+}
+
+#[test]
+fn biterator(){
+    let bytes = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    let bits = [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, true, false, false, false, false, false, false, false, true, true, false, false, false, false, false, true, false, false, false, false, false, false, false, true, false, true, false, false, false, false, false, true, true, false, false, false, false, false, false, true, true, true, false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, true];
+    let biter = Biterator::new(bytes.iter()).collect::<Vec<bool>>();
+    
+    assert_eq!(&bits as &[bool], biter.as_slice());
+}
+
+#[test]
+fn hpack_decode(){
+    let mut decoder: Decoder<'static> = Decoder::new(4096);
+    // let encoded = [0x82, 0x85, 0x40, 0x85, 0x35, 0x52, 0x17, 0xC9, 0x64, 0x85, 0x9C, 0xA3, 0x90, 0xB6, 0x7F, 0x40, 0x88, 0xA8, 0xE9, 0x50, 0xD5, 0x48, 0x5F, 0x25, 0x93, 0x85, 0x9C, 0xA3, 0x90, 0xB6, 0x7F];
+    let encoded = [0x82, 0x85, 0x40, 0x85, 0x35, 0x52, 0x17, 0xC9, 0x64, 0x85, 0x9C, 0xA3, 0x90, 0xB6, 0x7F, 0x0, 0x82, 0xA8, 0xE9, 0x85, 0x35, 0x52, 0x17, 0xC9, 0x64, 0x10, 0x84, 0xA8, 0xBD, 0xCB, 0x67, 0x85, 0x35, 0x52, 0x17, 0xC9, 0x64, 0x0, 0x86, 0x9E, 0xD9, 0x65, 0xA4, 0x75, 0x7F, 0x85, 0x2D, 0x44, 0x3C, 0x85, 0x93, 0x0, 0x88, 0xA8, 0xE9, 0x52, 0x7B, 0x65, 0x96, 0x91, 0xD5, 0x85, 0x2D, 0x44, 0x3C, 0x85, 0x93,];
+    let decoded: &[(&[u8], &[u8])] = &[(b":method", b"GET"), (b":path", b"/index.html"), (b"indexed", b"header"), (b"not", b"indexed"), (b"never", b"indexed"), (b"huffman", b"encoded"), (b"not huffman", b"encoded")];
+
+    let dec = decoder.decode(&encoded).unwrap();
+    let dec_ref = dec.iter().map(|(h,v)| (h.as_slice(), v.as_slice())).collect::<Vec<(&[u8], &[u8])>>();
+    
+    for &(header, value) in &dec_ref {
+        println!("{}: {}", String::from_utf8_lossy(header), String::from_utf8_lossy(value))
+    }
+
+    assert_eq!(decoded, dec_ref.as_slice());
 }
