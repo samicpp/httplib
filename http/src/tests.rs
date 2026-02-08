@@ -131,6 +131,7 @@ fn hpack_decode(){
     let encoded = [
         0x82,
         0x85,
+        0x26,
         0x40, 0x85, 0x35, 0x52, 0x17, 0xc9, 0x64, 0x85, 0x9c, 0xa3, 0x90, 0xb6, 0x7f,
         0x0, 0x82, 0xa8, 0xe9, 0x85, 0x35, 0x52, 0x17, 0xc9, 0x64,
         0x10, 0x84, 0xa8, 0xbd, 0xcb, 0x67, 0x85, 0x35, 0x52, 0x17, 0xc9, 0x64,
@@ -164,10 +165,12 @@ fn hpack_decode(){
 
     while pos < encoded.len() {
         let opos = pos;
-        decoder.decode_single(&encoded, &mut dec, &mut pos).unwrap();
+        let last = decoder.decode_single(&encoded, &mut pos).unwrap();
+        let last = if let Some(last) = last { last } else { continue; };
 
+        dec.push(last.clone());
+ 
         // let read = &encoded[opos..pos];
-        let last = dec.last().unwrap();
         println!("[{} - {} : {}] = ({}, {})", opos, pos, pos - opos, String::from_utf8_lossy(&last.0), String::from_utf8_lossy(&last.1))
     }
 

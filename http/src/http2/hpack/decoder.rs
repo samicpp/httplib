@@ -72,75 +72,79 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    pub fn decode_single(&mut self, input: &[u8], output: &mut Vec<(Vec<u8>, Vec<u8>)>, pos: &mut usize) -> Option<()> {
-        let first = *input.get(*pos)?;
+    pub fn decode_single(&mut self, buf: &[u8], pos: &mut usize) -> Option<Option<(Vec<u8>, Vec<u8>)>> {
+        let first = *buf.get(*pos)?;
+        let mut output = None;
 
         if first & 0x80 != 0 {
             // 6.1 Indexed Header Field
-            let index = Self::read_int(input, 7, pos)?;
+            let index = Self::read_int(buf, 7, pos)?;
 
             let fromt = self.get(index)?;
             let name = fromt.0.to_vec();
             let valu = fromt.1.to_vec();
 
-            output.push((name, valu));
+            output = Some((name, valu));
         }
         // 6.2 Literal Header Field Representation
         else if first & 0xc0 == 0x40 {
             // 6.2.1 Literal Header Field with Incremental Indexing
-            let index = Self::read_int(input, 6, pos)?;
+            let index = Self::read_int(buf, 6, pos)?;
 
             let name =
-            if index == 0 { self.read_string(input, pos)? }
+            if index == 0 { self.read_string(buf, pos)? }
             else { self.get(index)?.0.to_vec() };
 
-            let valu = self.read_string(input, pos)?;
+            let valu = self.read_string(buf, pos)?;
 
             self.dynamic_table.add((name.clone(), valu.clone()));
-            output.push((name, valu));
+            output = Some((name, valu));
         }
         else if first & 0xf0 == 0x00 {
             // 6.2.2 Literal Header Field without Indexing
-            let index = Self::read_int(input, 4, pos)?;
+            let index = Self::read_int(buf, 4, pos)?;
 
             let name =
-            if index == 0 { self.read_string(input, pos)? }
+            if index == 0 { self.read_string(buf, pos)? }
             else { self.get(index)?.0.to_vec() };
 
-            let valu = self.read_string(input, pos)?;
+            let valu = self.read_string(buf, pos)?;
 
-            output.push((name, valu));
+            output = Some((name, valu));
         }
         else if first & 0xf0 == 0x10 {
             // 6.2.3 Literal Header Field Never Indexed
-            let index = Self::read_int(input, 4, pos)?;
+            let index = Self::read_int(buf, 4, pos)?;
 
             let name =
-            if index == 0 { self.read_string(input, pos)? }
+            if index == 0 { self.read_string(buf, pos)? }
             else { self.get(index)?.0.to_vec() };
 
-            let valu = self.read_string(input, pos)?;
+            let valu = self.read_string(buf, pos)?;
 
-            output.push((name, valu));
+            output = Some((name, valu));
         }
         else if first & 0xe0 == 0x20 {
             // 6.3 Dynamic Table Size Update
-            let new_size = Self::read_int(input, 5, pos)?;
+            let new_size = Self::read_int(buf, 5, pos)?;
             self.dynamic_table.resize(new_size);
+            output = None;
         }
         else {
-            return None;
+            None?
         }
         
         
-        Some(())
+        Some(output)
     }
     pub fn decode(&mut self, buf: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
         let mut dec = Vec::new();
         let mut pos = 0;
 
         while pos < buf.len() {
-            self.decode_single(buf, &mut dec, &mut pos)?;
+            if let Some(head) = self.decode_single(buf, &mut pos)? {
+                dec.push(head);
+            }
         }
         
         Some(dec)
