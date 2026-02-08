@@ -1,6 +1,6 @@
 #[cfg(test)]
 
-use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame, http2::hpack::{Biterator, decoder::Decoder}};
+use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame, http2::hpack::{Biterator, decoder::Decoder, HeaderType}};
 
 #[test]
 fn two_is_two(){
@@ -165,8 +165,8 @@ fn hpack_decode(){
 
     while pos < encoded.len() {
         let opos = pos;
-        let last = decoder.decode_single(&encoded, &mut pos).unwrap();
-        let last = if let Some(last) = last { last } else { continue; };
+        let last = decoder.decode(&encoded, &mut pos).unwrap();
+        let last = if last.0 != HeaderType::TableSizeChange { (last.1, last.2) } else { continue; };
 
         dec.push(last.clone());
  

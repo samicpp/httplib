@@ -1,4 +1,4 @@
-use crate::http2::hpack::{DynamicTable, STATIC_TABLE, StaticTable, huffman::Huffman};
+use crate::http2::hpack::{DynamicTable, HeaderType, STATIC_TABLE, StaticTable, huffman::Huffman};
 
 
 pub struct Decoder<'a> {
@@ -34,7 +34,7 @@ impl<'a> Decoder<'a> {
     }
 
     pub fn read_int(buf: &[u8], prefix: u8, pos: &mut usize) -> Option<usize> {
-        if prefix == 0 || prefix > 8 { return None; }
+        // if prefix == 0 || prefix > 8 { return None; }
 
         let mask = ((1u16 << prefix as u16) - 1) as u8;
         let mut value = (buf.get(*pos)? & mask) as usize;
@@ -72,7 +72,7 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    pub fn decode_single(&mut self, buf: &[u8], pos: &mut usize) -> Option<Option<(Vec<u8>, Vec<u8>)>> {
+    pub fn decode(&mut self, buf: &[u8], pos: &mut usize) -> Option<(HeaderType, Vec<u8>, Vec<u8>)> {
         let first = *buf.get(*pos)?;
         let mut output = None;
 
@@ -84,7 +84,7 @@ impl<'a> Decoder<'a> {
             let name = fromt.0.to_vec();
             let valu = fromt.1.to_vec();
 
-            output = Some((name, valu));
+            output = Some((HeaderType::Lookup, name, valu));
         }
         // 6.2 Literal Header Field Representation
         else if first & 0xc0 == 0x40 {
@@ -98,7 +98,7 @@ impl<'a> Decoder<'a> {
             let valu = self.read_string(buf, pos)?;
 
             self.dynamic_table.add((name.clone(), valu.clone()));
-            output = Some((name, valu));
+            output = Some((HeaderType::Indexed, name, valu));
         }
         else if first & 0xf0 == 0x00 {
             // 6.2.2 Literal Header Field without Indexing
@@ -110,7 +110,7 @@ impl<'a> Decoder<'a> {
 
             let valu = self.read_string(buf, pos)?;
 
-            output = Some((name, valu));
+            output = Some((HeaderType::NotIndexed, name, valu));
         }
         else if first & 0xf0 == 0x10 {
             // 6.2.3 Literal Header Field Never Indexed
@@ -122,28 +122,30 @@ impl<'a> Decoder<'a> {
 
             let valu = self.read_string(buf, pos)?;
 
-            output = Some((name, valu));
+            output = Some((HeaderType::NeverIndexed, name, valu));
         }
         else if first & 0xe0 == 0x20 {
             // 6.3 Dynamic Table Size Update
             let new_size = Self::read_int(buf, 5, pos)?;
             self.dynamic_table.resize(new_size);
-            output = None;
+            output = Some((HeaderType::TableSizeChange, vec![], vec![]));
         }
         else {
-            None?
+            // None?
         }
         
         
-        Some(output)
+        output
     }
-    pub fn decode(&mut self, buf: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
+    pub fn decode_all(&mut self, buf: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
         let mut dec = Vec::new();
         let mut pos = 0;
 
         while pos < buf.len() {
-            if let Some(head) = self.decode_single(buf, &mut pos)? {
-                dec.push(head);
+            let (t, h, v) = self.decode(buf, &mut pos)?;
+            
+            if t != HeaderType::TableSizeChange {
+                dec.push((h, v))
             }
         }
         

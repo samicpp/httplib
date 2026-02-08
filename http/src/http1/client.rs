@@ -67,7 +67,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
     pub async fn send_head(&mut self) -> io::Result<()> {
         if !self.sent_head && self.version == HttpVersion::Http09 {
             let head = format!("GET {}\r\n", &self.path);
-            self.netw.write(head.as_bytes()).await?;
+            self.netw.write_all(head.as_bytes()).await?;
             self.sent_head = true;
             Ok(())
         }
@@ -81,7 +81,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
                 headers,
             );
             
-            self.netw.write(head.as_bytes()).await?;
+            self.netw.write_all(head.as_bytes()).await?;
             self.sent_head = true;
 
             Ok(())
@@ -101,7 +101,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
                 self.headers.insert("Transfer-Encoding".to_owned(), vec!["chunked".to_owned()]);
                 self.send_head().await?;
             }
-            self.netw.write(&get_chunk(body)).await?;
+            self.netw.write_all(&get_chunk(body)).await?;
             Ok(())
         }
         else{
@@ -117,13 +117,13 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         else if !self.sent_head{
             self.headers.insert("Content-Length".to_owned(), vec![body.len().to_string()]);
             self.send_head().await?;
-            self.netw.write(body).await?;
+            self.netw.write_all(body).await?;
             self.sent = true;
             Ok(())
         }
         else if !self.sent{
-            self.netw.write(&get_chunk(body)).await?;
-            self.netw.write(b"0\r\n\r\n").await?;
+            self.netw.write_all(&get_chunk(body)).await?;
+            self.netw.write_all(b"0\r\n\r\n").await?;
             Ok(())
         }
         else{

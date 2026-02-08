@@ -30,7 +30,7 @@ impl<R: ReadStream, W: WriteStream> WebSocket<R, W>{
 
     pub async fn send_frame_raw(&self, fin: bool, rsv: u8, opcode: u8, mask: Option<&[u8]>, payload: &[u8]) -> std::io::Result<()> {
         let frame = WebSocketFrame::create(fin, rsv, opcode, mask, payload);
-        self.netw.lock().await.write(&frame).await?;
+        self.netw.lock().await.write_all(&frame).await?;
         Ok(())
     }
     pub async fn flush(&self) -> std::io::Result<()> {

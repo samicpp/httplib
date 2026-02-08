@@ -187,7 +187,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
                 headers,
             );
             
-            self.netw.write(head.as_bytes()).await?;
+            self.netw.write_all(head.as_bytes()).await?;
             self.sent_head = true;
 
             Ok(())
@@ -200,7 +200,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     pub async fn write(&mut self, body: &[u8]) -> io::Result<()>{
         if !self.closed && self.client.version == HttpVersion::Http09 {
             if !self.sent_head { self.send_head().await? }
-            self.netw.write(body).await?;
+            self.netw.write_all(body).await?;
             Ok(())
         }
         else if !self.closed{
@@ -208,7 +208,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
                 self.headers.insert("Transfer-Encoding".to_owned(), vec!["chunked".to_owned()]);
                 self.send_head().await?;
             }
-            self.netw.write(&get_chunk(body)).await?;
+            self.netw.write_all(&get_chunk(body)).await?;
             Ok(())
         }
         else{
@@ -219,17 +219,17 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
         if !self.sent_head{
             self.headers.insert("Content-Length".to_owned(), vec![body.len().to_string()]);
             self.send_head().await?;
-            self.netw.write(body).await?;
+            self.netw.write_all(body).await?;
             self.closed = true;
             Ok(())
         }
         else if !self.closed && self.client.version == HttpVersion::Http09 {
-            self.netw.write(body).await?;
+            self.netw.write_all(body).await?;
             Ok(())
         }
         else if !self.closed{
-            self.netw.write(&get_chunk(body)).await?;
-            self.netw.write(b"0\r\n\r\n").await?;
+            self.netw.write_all(&get_chunk(body)).await?;
+            self.netw.write_all(b"0\r\n\r\n").await?;
             self.closed = true;
             Ok(())
         }

@@ -108,10 +108,10 @@ impl<'a> StaticTable<'a>{
     pub fn get(&self, index: usize) -> Option<(&[u8], &[u8])> {
         match self {
             Self::Borrow(b) => {
-                b.get(index).and_then(|(h, v)| Some((*h, *v)))
+                b.get(index).map(|t| *t)
             }
             Self::Owned(v) => {
-                v.get(index).and_then(|(h, v)| Some((h.as_slice(), v.as_slice())))
+                v.get(index).map(|(h, v)| (h.as_slice(), v.as_slice()))
             }
         }
     }
@@ -120,6 +120,10 @@ impl<'a> StaticTable<'a>{
             Self::Borrow(b) => b.len(),
             Self::Owned(o) => o.len(),
         }
+    }
+
+    pub fn iter(&'a self) -> StaticTableIterator<'a> {
+        StaticTableIterator { cur: 0, table: self }
     }
 }
 impl<'a> From<&'a [(&'a [u8], &'a [u8])]> for StaticTable<'a> {
@@ -138,6 +142,19 @@ impl<'a> Into<Vec<(Vec<u8>, Vec<u8>)>> for StaticTable<'a> {
             Self::Borrow(b) => b.iter().map(|(h, v)| (h.to_vec(), v.to_vec())).collect(),
             Self::Owned(v) => v,
         }
+    }
+}
+
+pub struct StaticTableIterator<'a>{
+    cur: usize,
+    table: &'a StaticTable<'a>,
+}
+impl<'a> Iterator for StaticTableIterator<'a> {
+    type Item = (&'a [u8], &'a [u8]);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.cur += 1;
+        self.table.get(self.cur - 1)
     }
 }
 
@@ -173,6 +190,16 @@ impl DynamicTable {
         self.table_size = new_size;
         self.evict();
     }
+}
+
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeaderType{
+    Lookup,
+    Indexed,
+    NotIndexed,
+    NeverIndexed,
+    TableSizeChange,
 }
 
 
