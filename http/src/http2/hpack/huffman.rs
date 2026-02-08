@@ -394,6 +394,7 @@ impl Huffman {
             let byte = acc >> (alen - 8);
             let byte = byte as u8;
             res.push(byte);
+            alen -= 8;
 
             if alen > 0 { acc &= (1 << alen) - 1; }
             else { acc = 0; }

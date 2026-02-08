@@ -1,6 +1,6 @@
 #[cfg(test)]
 
-use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame, http2::hpack::{Biterator, decoder::Decoder, HeaderType}};
+use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame, http2::hpack::{Biterator, decoder::Decoder, HeaderType, encoder::Encoder}};
 
 #[test]
 fn two_is_two(){
@@ -166,15 +166,50 @@ fn hpack_decode(){
     while pos < encoded.len() {
         let opos = pos;
         let last = decoder.decode(&encoded, &mut pos).unwrap();
+        let htyp = last.0;
         let last = if last.0 != HeaderType::TableSizeChange { (last.1, last.2) } else { continue; };
 
         dec.push(last.clone());
  
         // let read = &encoded[opos..pos];
-        println!("[{} - {} : {}] = ({}, {})", opos, pos, pos - opos, String::from_utf8_lossy(&last.0), String::from_utf8_lossy(&last.1))
+        println!("[{} - {} : {}] = \x1b[38;5;8m{:?}\x1b[0m({}, {})", opos, pos, pos - opos, htyp, String::from_utf8_lossy(&last.0), String::from_utf8_lossy(&last.1))
     }
 
     let dec_ref = dec.iter().map(|(h,v)| (h.as_slice(), v.as_slice())).collect::<Vec<(&[u8], &[u8])>>();
 
     assert_eq!(decoded, dec_ref.as_slice());
+}
+
+#[test]
+fn hpack_encode(){
+    let mut encoder: Encoder<'static> = Encoder::new(4096);
+    let encoded = [
+        0x82,
+        0x85,
+        0x40, 0x85, 0x35, 0x52, 0x17, 0xc9, 0x64, 0x85, 0x9c, 0xa3, 0x90, 0xb6, 0x7f,
+        0x0, 0x82, 0xa8, 0xe9, 0x85, 0x35, 0x52, 0x17, 0xc9, 0x64,
+        0x10, 0x84, 0xa8, 0xbd, 0xcb, 0x67, 0x85, 0x35, 0x52, 0x17, 0xc9, 0x64,
+        0x0, 0x86, 0x9e, 0xd9, 0x65, 0xa4, 0x75, 0x7f, 0x85, 0x2d, 0x44, 0x3c, 0x85, 0x93,
+        0x0, 0xb, 0x6e, 0x6f, 0x74, 0x20, 0x68, 0x75, 0x66, 0x66, 0x6d, 0x61, 0x6e, 0x7, 0x65, 0x6e, 0x63, 0x6f, 0x64, 0x65, 0x64
+    ];
+    let decoded: &[(HeaderType, &[u8], &[u8], Option<bool>)] = &[
+        (HeaderType::Lookup, b":method", b"GET", None), 
+        (HeaderType::Lookup, b":path", b"/index.html", None), 
+        (HeaderType::Indexed, b"indexed", b"header", None), 
+        (HeaderType::NotIndexed, b"not", b"indexed", None), 
+        (HeaderType::NeverIndexed, b"never", b"indexed", None), 
+        (HeaderType::NotIndexed, b"huffman", b"encoded", Some(true)), 
+        (HeaderType::NotIndexed, b"not huffman", b"encoded", Some(false)),
+    ];
+
+    let mut buff = Vec::new();
+
+    for &h in decoded {
+        println!("encoding header");
+        encoder.encode(&mut buff, h.0, h.1, h.2, h.3).unwrap();
+    }
+
+    dbg!(&buff);
+    assert_eq!(buff.as_slice(), encoded);
+
 }
