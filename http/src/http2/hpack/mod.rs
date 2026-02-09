@@ -158,6 +158,7 @@ impl<'a> Iterator for StaticTableIterator<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct DynamicTable {
     pub size: usize,
     pub table_size: usize,

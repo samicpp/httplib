@@ -1,6 +1,7 @@
 use crate::http2::hpack::{DynamicTable, HeaderType, STATIC_TABLE, StaticTable, huffman::Huffman};
 
 
+#[derive(Debug)]
 pub struct Decoder<'a> {
     pub static_table: StaticTable<'a>,
     pub dynamic_table: DynamicTable,

@@ -161,6 +161,12 @@ impl Http2Frame{
 
         frame
     }
+
+    pub fn is_ack(&self) -> bool { self.flags & 0x01 != 0 }
+    pub fn is_end_stream(&self) -> bool { self.flags & 0x01 != 0 }
+    pub fn is_end_headers(&self) -> bool { self.flags & 0x04 != 0 }
+    pub fn is_padded(&self) -> bool { self.flags & 0x08 != 0 }
+    pub fn is_priority(&self) -> bool { self.flags & 0x20 != 0 }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -211,6 +217,85 @@ impl Into<u8> for Http2FrameType {
             Self::Continuation => 9,
 
             Self::Invalid(v) => v,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Http2Settings {
+    pub header_table_size: Option<u32>,       // 1
+    pub enable_push: Option<u32>,             // 2
+    pub max_concurrent_streams: Option<u32>,  // 3
+    pub initial_window_size: Option<u32>,     // 4
+    pub max_frame_size: Option<u32>,          // 5
+    pub max_header_list_size: Option<u32>,    // 6
+}
+impl Http2Settings {
+    pub fn empty() -> Self {
+        Self {
+            header_table_size: None,
+            enable_push: None,
+            max_concurrent_streams: None,
+            initial_window_size: None,
+            max_frame_size: None,
+            max_header_list_size: None,
+        }
+    }
+
+    pub fn from_raw(buf: &[u8]) -> Option<Vec<(u16, u32)>> {
+        if buf.len() % 6 != 0 { return None }
+        
+        let mut total = Vec::with_capacity(buf.len() / 6);
+
+        for chunk in buf.chunks_exact(6) {
+            let sid = u16::from_be_bytes([chunk[0], chunk[1]]);
+            let val = u32::from_be_bytes([chunk[2], chunk[3], chunk[4], chunk[5]]);
+            
+            total.push((sid, val));
+        }
+
+        Some(total)
+    }
+    pub fn from(buf: &[u8]) -> Self {
+        let mut sett = Self::empty();
+        let rset = Self::from_raw(buf);
+
+        if let Some(rset) = rset {
+            for (id, val) in rset {
+                if id == 1 { sett.header_table_size = Some(val) }
+                else if id == 2 { sett.enable_push = Some(val) }
+                else if id == 3 { sett.max_concurrent_streams = Some(val) }
+                else if id == 4 { sett.initial_window_size = Some(val) }
+                else if id == 5 { sett.max_frame_size = Some(val) }
+                else if id == 6 { sett.max_header_list_size = Some(val) }
+            }
+        }
+
+        sett
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        let mut res = vec![];
+
+        if let Some(val) = self.header_table_size { res.extend_from_slice(&[0, 1]); res.extend_from_slice(&u32::to_be_bytes(val)); }
+        if let Some(val) = self.enable_push { res.extend_from_slice(&[0, 2]); res.extend_from_slice(&u32::to_be_bytes(val)); }
+        if let Some(val) = self.max_concurrent_streams { res.extend_from_slice(&[0, 3]); res.extend_from_slice(&u32::to_be_bytes(val)); }
+        if let Some(val) = self.initial_window_size { res.extend_from_slice(&[0, 4]); res.extend_from_slice(&u32::to_be_bytes(val)); }
+        if let Some(val) = self.max_frame_size { res.extend_from_slice(&[0, 5]); res.extend_from_slice(&u32::to_be_bytes(val)); }
+        if let Some(val) = self.max_header_list_size { res.extend_from_slice(&[0, 6]); res.extend_from_slice(&u32::to_be_bytes(val)); }
+    
+        res
+    }
+}
+impl Default for Http2Settings {
+    fn default() -> Self {
+        Self {
+            header_table_size: Some(4096),
+            enable_push: Some(1),
+            max_concurrent_streams: None,
+            initial_window_size: Some(65535),
+            max_frame_size: Some(65535),
+            max_header_list_size: None,
         }
     }
 }
