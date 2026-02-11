@@ -1,9 +1,9 @@
-use std::{cmp::min, io, sync::{Arc, Mutex as SyncMutex, atomic::AtomicBool}};
+use std::{cmp::min, io, sync::{Arc, Mutex as SyncMutex, atomic::{AtomicBool, Ordering}}};
 
 use dashmap::DashMap;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf}, sync::{Mutex as AsyncMutex, Notify}};
 
-use crate::{http2::{core::{Http2Frame, Http2FrameType, Http2Settings}, hpack::{HeaderType, decoder::Decoder, encoder::Encoder}}, shared::{LibError, LibResult, ReadStream, Stream, WriteStream}};
+use crate::{http2::{core::{Http2Frame, Http2FrameType, Http2Settings}, hpack::{HeaderType, HpackError, decoder::Decoder, encoder::Encoder}}, shared::{LibError, LibResult, ReadStream, Stream, WriteStream}};
 
 pub const PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
@@ -36,6 +36,11 @@ pub struct Http2Data {
     pub body: Vec<u8>,
     pub head: Vec<u8>,
     pub headers: Vec<(Vec<u8>, Vec<u8>)>,
+
+    pub ascociated: Option<u32>,
+    pub promising: Option<u32>, 
+    pub promise: Vec<u8>,
+    pub push_headers: Vec<(Vec<u8>, Vec<u8>)>,
 }
 impl Http2Data {
     pub fn empty(stream_id: u32, sett: Http2Settings) -> Self {
@@ -51,6 +56,10 @@ impl Http2Data {
             body: Vec::new(),
             head: Vec::new(),
             headers: Vec::new(),
+            ascociated: None,
+            promising: None,
+            promise: Vec::new(),
+            push_headers: Vec::new(),
         }
     }
 }
@@ -114,16 +123,211 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         let mut reader = self.netr.lock().await;
         Http2Frame::from_reader(&mut *reader).await
     }
-    pub async fn next(&self) -> LibResult<u32> {
+    pub async fn next(&self) -> LibResult<Option<u32>> {
         let frame = self.read_frame().await?;
         self.handle(frame, true).await
     }
-    pub async fn handle(&self, frame: Http2Frame, _strict: bool) -> LibResult<u32> {
+    pub async fn handle(&self, frame: Http2Frame, strict: bool) -> LibResult<Option<u32>> {
         match frame.ftype {
-            
-            _ => (),
+            Http2FrameType::Data => {                
+                if let Some(mut shard) = self.streams.get_mut(&frame.stream_id) {
+                    // strict check wether closed
+
+                    shard.body.extend_from_slice(frame.get_payload());
+                    
+                    if frame.is_end_stream() { shard.end_body = true }
+
+                    drop(shard);
+                    self.send_window_update(frame.stream_id, frame.length).await?;
+
+                    Ok(None)
+                }
+                else {
+                    Err(LibError::InvalidStream)
+                }
+            },
+            Http2FrameType::Headers => {
+                let mut decoder = self.decoder.lock().await;
+                match self.streams.get_mut(&frame.stream_id) {
+                    // allow leading or trailing non opening headers
+                    // strict verify that this is the case
+                    Some(mut shard) if self.mode.is_client() || self.mode.is_ambiguous() => {
+
+                        shard.head.extend_from_slice(frame.get_payload());
+
+                        if frame.is_end_headers() {
+                            let mut dec = decoder.decode_all(&shard.head).ok_or(HpackError::InvalidHeaderField)?;
+                            shard.headers.append(&mut dec);
+                        }
+                        if frame.is_end_stream() { shard.end_body = true }
+                        Ok(None)
+                    },
+                    None if self.mode.is_server() || self.mode.is_ambiguous() => {
+                        let mut stream = Http2Data::empty(frame.stream_id, *self.settings.lock().unwrap());
+
+                        stream.head.extend_from_slice(frame.get_payload());
+
+                        if frame.is_end_stream() { stream.end_body = true }
+                        if frame.is_end_headers() {
+                            stream.end_head = true;
+                            stream.headers.append(&mut decoder.decode_all(&stream.head).ok_or(HpackError::InvalidHeaderField)?);
+                        }
+                        
+                        self.streams.insert(frame.stream_id, stream);
+                        
+                        if frame.is_end_headers() {
+                            Ok(Some(frame.stream_id))
+                        }
+                        else {
+                            Ok(None)
+                        }
+                    }
+                    _ => Err(LibError::ProtocolError),
+                }
+            },
+            Http2FrameType::Priority => {
+                Ok(None)
+            },
+            Http2FrameType::RstStream => {
+                if let Some(mut shard) = self.streams.get_mut(&frame.stream_id) {
+                    shard.reset = true;
+
+                    Ok(None)
+                }
+                else {
+                    Err(LibError::InvalidStream)
+                }
+            },
+            Http2FrameType::Settings => {
+                // strict only allow known settings (1 - 6)
+                let sett = Http2Settings::from(frame.get_payload());
+                let mut settings = self.settings.lock().unwrap();
+                
+                if let Some(val) = sett.header_table_size { settings.header_table_size = Some(val) }
+                if let Some(val) = sett.enable_push { settings.enable_push = Some(val) }
+                if let Some(val) = sett.max_concurrent_streams { settings.max_concurrent_streams = Some(val) }
+                if let Some(val) = sett.initial_window_size { settings.initial_window_size = Some(val) }
+                if let Some(val) = sett.max_frame_size { settings.max_frame_size = Some(val) }
+                if let Some(val) = sett.max_header_list_size { settings.max_header_list_size = Some(val) }
+
+                Ok(None)
+            },
+            Http2FrameType::PushPromise => {
+                let pay = frame.get_payload();
+
+                // strict verify associated stream exists
+                if (self.mode.is_client() || self.mode.is_ambiguous()) && pay.len() >= 4 {
+                    let mut decoder = self.decoder.lock().await;
+
+                    let promised = u32::from_be_bytes([pay[0], pay[1], pay[2], pay[3]]);
+                    if self.streams.contains_key(&promised) {
+                        Err(LibError::ProtocolError)
+                    }
+                    else if let Some(mut shard) = self.streams.get_mut(&frame.stream_id) {
+                        let mut stream = Http2Data::empty(promised, *self.settings.lock().unwrap());
+
+                        stream.promise.extend_from_slice(frame.get_payload());
+
+                        if frame.is_end_headers() {
+                            stream.push_headers.append(&mut decoder.decode_all(&stream.promise).ok_or(HpackError::InvalidHeaderField)?);
+                        }
+                        if frame.is_end_stream() { stream.end_body = true }
+
+                        self.streams.insert(promised, stream);
+                        shard.promising = Some(promised);
+
+                        if frame.is_end_headers() {
+                            Ok(Some(promised))
+                        }
+                        else {
+                            Ok(None)
+                        }
+                    }
+                    else {
+                        Err(LibError::ProtocolError)
+                    }
+                }
+                else {
+                    Err(LibError::ProtocolError)
+                }
+            },
+            Http2FrameType::Ping => {
+                if !frame.is_ack() { self.send_ping(true, frame.get_payload()).await?; }
+                Ok(None)
+            },
+            Http2FrameType::Goaway => {
+                self.goaway.store(true, Ordering::SeqCst);
+                let mut goaway = self.goaway_frame.lock().unwrap();
+                *goaway = Some(frame);
+                Ok(None)
+            },
+            Http2FrameType::WindowUpdate => {
+                let pay = frame.get_payload();
+                
+                if pay.len() == 4 {
+                    let size = u32::from_be_bytes([pay[0], pay[1], pay[2], pay[3]]);
+                    if frame.stream_id == 0 {
+                        let mut window = self.window.lock().unwrap();
+                        *window += size as usize;
+                        self.notify.notify_waiters();
+                        Ok(None)
+                    }
+                    else if let Some(mut shard) = self.streams.get_mut(&frame.stream_id) {
+                        shard.window += size as usize;
+                        shard.notify.notify_waiters();
+                        Ok(None)
+                    }
+                    else {
+                        Err(LibError::InvalidStream)
+                    }
+                }
+                else {
+                    Err(LibError::ProtocolError)
+                }
+            },
+            Http2FrameType::Continuation => {
+                let mut decoder = self.decoder.lock().await;
+
+                if let Some(mut shard) = self.streams.get_mut(&frame.stream_id) {
+                    if let Some(promising) = shard.promising && let Some(mut promised) = self.streams.get_mut(&promising) {
+                        promised.promise.extend_from_slice(frame.get_payload());
+
+                        if frame.is_end_headers() {
+                            let mut dec = decoder.decode_all(&promised.promise).ok_or(HpackError::InvalidHeaderField)?;
+                            promised.push_headers.append(&mut dec);
+                            Ok(Some(promising))
+                        }
+                        else {
+                            Ok(None)
+                        }
+                    }
+                    else {
+                        shard.head.extend_from_slice(frame.get_payload());
+
+                        if frame.is_end_stream() { shard.end_body = true }
+                        if frame.is_end_headers() {
+                            let mut dec = decoder.decode_all(&shard.head).ok_or(HpackError::InvalidHeaderField)?;
+                            shard.headers.append(&mut dec);
+                            Ok(Some(frame.stream_id))
+                        }
+                        else {
+                            Ok(None)
+                        }
+                    }
+                }
+                else {
+                    Err(LibError::InvalidStream)
+                }
+            },
+            Http2FrameType::Invalid(_) => {
+                if strict {
+                    Err(LibError::ProtocolError)
+                }
+                else {
+                    Ok(None)
+                }
+            }
         }
-        todo!()
     }
 
     pub fn open_stream(&self) -> u32 {

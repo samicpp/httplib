@@ -331,6 +331,16 @@ impl From<std::io::Error> for LibError {
         Self::Io(value)
     }
 }
+impl From<HuffmanError> for LibError {
+    fn from(value: HuffmanError) -> Self {
+        Self::Huffman(value)
+    }
+}
+impl From<HpackError> for LibError {
+    fn from(value: HpackError) -> Self {
+        Self::Hpack(value)
+    }
+}
 impl Display for LibError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

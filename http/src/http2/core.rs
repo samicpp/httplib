@@ -162,6 +162,11 @@ impl Http2Frame{
         frame
     }
 
+
+    pub fn get_payload(&self) -> &[u8] {
+        &self.source[self.payload.clone()]
+    }
+
     pub fn is_ack(&self) -> bool { self.flags & 0x01 != 0 }
     pub fn is_end_stream(&self) -> bool { self.flags & 0x01 != 0 }
     pub fn is_end_headers(&self) -> bool { self.flags & 0x04 != 0 }
