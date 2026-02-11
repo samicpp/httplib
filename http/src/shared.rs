@@ -304,6 +304,7 @@ pub enum LibError {
     NotAccepted,
     ResetStream,
     Goaway,
+    ProtocolError,
 }
 impl LibError {
     pub fn io(&self) -> Option<&std::io::Error> { if let Self::Io(io) = self { Some(io) } else { None } }
@@ -323,6 +324,7 @@ impl LibError {
     pub fn is_not_accepted(&self) -> bool { if let Self::NotAccepted = self { true } else { false } }
     pub fn is_reset_stream(&self) -> bool { if let Self::ResetStream = self { true } else { false } }
     pub fn is_goaway(&self) -> bool { if let Self::Goaway = self { true } else { false } }
+    pub fn is_protocol_error(&self) -> bool { if let Self::ProtocolError = self { true } else { false } }
 }
 impl From<std::io::Error> for LibError {
     fn from(value: std::io::Error) -> Self {
@@ -349,6 +351,7 @@ impl Display for LibError {
             Self::NotAccepted => writeln!(f, "Not accepted"),
             Self::ResetStream => writeln!(f, "stream reset"),
             Self::Goaway => writeln!(f, "Goaway received"),
+            Self::ProtocolError => writeln!(f, "Protocol error"),
         }
     }
 }

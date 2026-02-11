@@ -1,12 +1,24 @@
-use std::{cmp::min, io, sync::{Arc, Mutex as SyncMutex, atomic::{AtomicBool, AtomicU32}}};
+use std::{cmp::min, io, sync::{Arc, Mutex as SyncMutex, atomic::AtomicBool}};
 
-use dashmap::{DashMap, mapref::one::RefMut};
+use dashmap::DashMap;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf}, sync::{Mutex as AsyncMutex, Notify}};
 
 use crate::{http2::{core::{Http2Frame, Http2FrameType, Http2Settings}, hpack::{HeaderType, decoder::Decoder, encoder::Encoder}}, shared::{LibError, LibResult, ReadStream, Stream, WriteStream}};
 
 pub const PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Ambiguous,
+    Client,
+    Server,
+}
+impl Mode {
+    pub fn is_ambiguous(&self) -> bool { if let Self::Ambiguous = self { true } else { false } }
+    pub fn is_client(&self) -> bool { if let Self::Client = self { true } else { false } }
+    pub fn is_server(&self) -> bool { if let Self::Server = self { true } else { false } }
+}
 
 #[derive(Debug)]
 pub struct Http2Data {
@@ -47,11 +59,12 @@ impl Http2Data {
 pub struct Http2Session<R: ReadStream, W: WriteStream>{
     pub netr: AsyncMutex<R>,
     pub netw: AsyncMutex<W>,
+    pub mode: Mode,
 
     pub decoder: AsyncMutex<Decoder<'static>>,
     pub encoder: AsyncMutex<Encoder<'static>>,
 
-    pub max_stream_id: AtomicU32,
+    pub max_stream_id: SyncMutex<u32>,
     pub streams: DashMap<u32, Http2Data>,
 
     pub goaway: AtomicBool,
@@ -65,19 +78,19 @@ pub struct Http2Session<R: ReadStream, W: WriteStream>{
 impl<S: Stream> Http2Session<ReadHalf<S>, WriteHalf<S>> {
     pub fn new(net: S) -> Self {
         let (netr, netw) = tokio::io::split(net);
-        Self::with(netr, netw, Http2Settings::default())
+        Self::with(netr, netw, Mode::Ambiguous, Http2Settings::default())
     }
 }
 impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
-    pub fn with(netr: R, netw: W, settings: Http2Settings) -> Self {
+    pub fn with(netr: R, netw: W, mode: Mode, settings: Http2Settings) -> Self {
         let netr = AsyncMutex::new(netr);
         let netw = AsyncMutex::new(netw);
 
         Self {
-            netr, netw,
+            netr, netw, mode,
             decoder: AsyncMutex::new(Decoder::new(settings.header_table_size.unwrap_or(4096) as usize)),
             encoder: AsyncMutex::new(Encoder::new(settings.header_table_size.unwrap_or(4096) as usize)),
-            max_stream_id: AtomicU32::new(0),
+            max_stream_id: SyncMutex::new(0),
             streams: DashMap::new(),
             goaway: AtomicBool::new(false),
             goaway_frame: SyncMutex::new(None),
@@ -103,9 +116,9 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
     }
     pub async fn next(&self) -> LibResult<u32> {
         let frame = self.read_frame().await?;
-        self.handle(frame).await
+        self.handle(frame, true).await
     }
-    pub async fn handle(&self, frame: Http2Frame) -> LibResult<u32> {
+    pub async fn handle(&self, frame: Http2Frame, _strict: bool) -> LibResult<u32> {
         match frame.ftype {
             
             _ => (),
@@ -113,15 +126,25 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         todo!()
     }
 
-    pub fn get_or_open_stream(&self, stream_id: u32) -> RefMut<'_, u32, Http2Data> {
-        if let Some(shard) = self.streams.get_mut(&stream_id) {
-            shard
+    pub fn open_stream(&self) -> u32 {
+        let mut max_id = self.max_stream_id.lock().unwrap();
+        let stream_id = 
+        if self.mode.is_ambiguous() { 
+            *max_id + 1
+        }
+        else if self.mode.is_client() {
+            if *max_id % 2 == 1 { *max_id + 2 }
+            else { *max_id + 1 }
         }
         else {
-            self.streams.insert(stream_id, Http2Data::empty(stream_id, *self.settings.lock().unwrap()));
-            self.streams.get_mut(&stream_id).unwrap()
+            if *max_id % 2 == 0 { *max_id + 2 }
+            else { *max_id + 1 }
         }
+        ;
+        *max_id = stream_id;
+        stream_id
     }
+
 
 
     pub async fn write_frame(&self, ftype: Http2FrameType, flags: u8, stream_id: u32, priority: Option<&[u8]>, payload: Option<&[u8]>, padding: Option<&[u8]>) -> io::Result<()> {
@@ -218,7 +241,16 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
 
     pub async fn send_headers(&self, stream_id: u32, end: bool, headers: &[(&[u8], &[u8])]) -> LibResult<()> {
         {
-            let mut shard = self.get_or_open_stream(stream_id);
+            let mut shard = 
+            match self.streams.get_mut(&stream_id) {
+                // doing !self.mode.is_(oposite)() would be more optimized maybe
+                Some(s) if self.mode.is_server() || self.mode.is_ambiguous() => s,
+                None if self.mode.is_client() || self.mode.is_ambiguous() => {
+                    self.streams.insert(stream_id, Http2Data::empty(stream_id, *self.settings.lock().unwrap()));
+                    self.streams.get_mut(&stream_id).unwrap()
+                }
+                _ => return Err(LibError::InvalidStream),
+            };
 
             if shard.self_end_head || shard.self_end_body {
                 return Err(LibError::StreamClosed)
