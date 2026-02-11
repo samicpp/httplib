@@ -7,7 +7,7 @@ use base64::engine::general_purpose::STANDARD as b64std;
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use crate::http1::get_chunk;
-use crate::shared::HttpMethod;
+use crate::shared::{HttpMethod, LibError, LibResult};
 use crate::shared::{HttpType, HttpVersion, ReadStream, Stream, WriteStream, HttpClient, HttpSocket};
 use crate::websocket::socket::{MAGIC, WebSocket};
 
@@ -64,7 +64,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     }
 
 
-    pub async fn read_client(&mut self) -> io::Result<&HttpClient>{
+    pub async fn read_client(&mut self) -> LibResult<&HttpClient>{
         self.line_buf.clear();
 
         if !self.client.valid {
@@ -151,11 +151,11 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
 
         Ok(&self.client)
     }
-    pub async fn read_until_complete(&mut self) -> io::Result<&HttpClient>{
+    pub async fn read_until_complete(&mut self) -> LibResult<&HttpClient>{
         while self.client.valid && !self.client.body_complete { let _ = self.read_client().await?; }
         Ok(&self.client)
     }
-    pub async fn read_until_head_complete(&mut self) -> io::Result<&HttpClient>{
+    pub async fn read_until_head_complete(&mut self) -> LibResult<&HttpClient>{
         while self.client.valid && !self.client.head_complete { let _ = self.read_client().await?; }
         Ok(&self.client)
     }
@@ -171,7 +171,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
         self.headers.remove(header)
     }
 
-    pub async fn send_head(&mut self) -> io::Result<()> {
+    pub async fn send_head(&mut self) -> LibResult<()> {
         if !self.sent_head && self.client.version == HttpVersion::Http09 {
             self.sent_head = true;
             Ok(())
@@ -193,11 +193,11 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             Ok(())
         }
         else{
-            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+            Err(LibError::ConnectionClosed)
         }
     }
 
-    pub async fn write(&mut self, body: &[u8]) -> io::Result<()>{
+    pub async fn write(&mut self, body: &[u8]) -> LibResult<()>{
         if !self.closed && self.client.version == HttpVersion::Http09 {
             if !self.sent_head { self.send_head().await? }
             self.netw.write_all(body).await?;
@@ -212,10 +212,10 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             Ok(())
         }
         else{
-            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+            Err(LibError::ConnectionClosed)
         }
     }
-    pub async fn close(&mut self, body: &[u8]) -> io::Result<()>{
+    pub async fn close(&mut self, body: &[u8]) -> LibResult<()>{
         if !self.sent_head{
             self.headers.insert("Content-Length".to_owned(), vec![body.len().to_string()]);
             self.send_head().await?;
@@ -234,11 +234,11 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             Ok(())
         }
         else{
-            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+            Err(LibError::ConnectionClosed)
         }
     }
-    pub async fn flush(&mut self) -> io::Result<()> {
-        self.netw.flush().await
+    pub async fn flush(&mut self) -> LibResult<()> {
+        self.netw.flush().await.map_err(|e| e.into())
     }
 
     pub fn reset(&mut self){
@@ -253,7 +253,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     pub fn websocket_direct(self) -> WebSocket<BufReader<R>, W> {
         WebSocket::with_split(self.netr, self.netw)
     }
-    pub async fn websocket_with_key(mut self, mut wskey: Vec<u8>) -> io::Result<WebSocket<BufReader<R>, W>> {
+    pub async fn websocket_with_key(mut self, mut wskey: Vec<u8>) -> LibResult<WebSocket<BufReader<R>, W>> {
         wskey.extend_from_slice(MAGIC);
 
         let reskey = Sha1::digest(&wskey);
@@ -268,7 +268,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
 
         Ok(self.websocket_direct())
     }
-    pub async fn websocket(self) -> io::Result<WebSocket<BufReader<R>, W>> {
+    pub async fn websocket(self) -> LibResult<WebSocket<BufReader<R>, W>> {
         let key = self.client.headers.get("sec-websocket-key").map_or_else(
             || Err(io::Error::new(io::ErrorKind::Other, "missing ws key")), 
             |k| Ok(k[0].as_bytes().to_vec())
@@ -285,17 +285,17 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
     fn get_client(&self) -> &HttpClient {
         &self.client
     }
-    fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, LibError>> + Send + '_>> {
         Box::pin(async move {
             self.read_client().await
         })
     }
-    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, LibError>> + Send + '_>> {
         Box::pin(async move {
             self.read_until_complete().await
         })
     }
-    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, std::io::Error>> + Send + '_>> {
+    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, LibError>> + Send + '_>> {
         Box::pin(async move {
             self.read_until_head_complete().await
         })
@@ -309,17 +309,17 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for Http1Socket<R, W>{
         self.code = code;
         self.status = message;
     }
-    fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+    fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
         Box::pin(async move {
             self.write(body).await
         })
     }
-    fn close<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+    fn close<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
         Box::pin(async move {
             self.close(body).await
         })
     }
-    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
         Box::pin(async move{
             self.flush().await
         })

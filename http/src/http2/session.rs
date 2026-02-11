@@ -1,9 +1,9 @@
-use std::{cmp::min, io, sync::{Arc, Mutex as SyncMutex, atomic::AtomicBool}};
+use std::{cmp::min, io, sync::{Arc, Mutex as SyncMutex, atomic::{AtomicBool, AtomicU32}}};
 
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::one::RefMut};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf}, sync::{Mutex as AsyncMutex, Notify}};
 
-use crate::{http2::{core::{Http2Frame, Http2FrameType, Http2Settings}, hpack::{HeaderType, decoder::Decoder, encoder::Encoder}}, shared::{ReadStream, Stream, WriteStream}};
+use crate::{http2::{core::{Http2Frame, Http2FrameType, Http2Settings}, hpack::{HeaderType, decoder::Decoder, encoder::Encoder}}, shared::{LibError, LibResult, ReadStream, Stream, WriteStream}};
 
 pub const PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
@@ -25,6 +25,23 @@ pub struct Http2Data {
     pub head: Vec<u8>,
     pub headers: Vec<(Vec<u8>, Vec<u8>)>,
 }
+impl Http2Data {
+    pub fn empty(stream_id: u32, sett: Http2Settings) -> Self {
+        Self {
+            window: sett.initial_window_size.unwrap_or(65535) as usize,
+            notify: Arc::new(Notify::new()),
+            stream_id,
+            reset: false,
+            end_head: false,
+            end_body: false,
+            self_end_head: false,
+            self_end_body: false,
+            body: Vec::new(),
+            head: Vec::new(),
+            headers: Vec::new(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Http2Session<R: ReadStream, W: WriteStream>{
@@ -34,6 +51,7 @@ pub struct Http2Session<R: ReadStream, W: WriteStream>{
     pub decoder: AsyncMutex<Decoder<'static>>,
     pub encoder: AsyncMutex<Encoder<'static>>,
 
+    pub max_stream_id: AtomicU32,
     pub streams: DashMap<u32, Http2Data>,
 
     pub goaway: AtomicBool,
@@ -59,6 +77,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
             netr, netw,
             decoder: AsyncMutex::new(Decoder::new(settings.header_table_size.unwrap_or(4096) as usize)),
             encoder: AsyncMutex::new(Encoder::new(settings.header_table_size.unwrap_or(4096) as usize)),
+            max_stream_id: AtomicU32::new(0),
             streams: DashMap::new(),
             goaway: AtomicBool::new(false),
             goaway_frame: SyncMutex::new(None),
@@ -82,12 +101,26 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         let mut reader = self.netr.lock().await;
         Http2Frame::from_reader(&mut *reader).await
     }
-    pub async fn next(&self) -> io::Result<u32> {
+    pub async fn next(&self) -> LibResult<u32> {
         let frame = self.read_frame().await?;
         self.handle(frame).await
     }
-    pub async fn handle(&self, _frame: Http2Frame) -> io::Result<u32> {
+    pub async fn handle(&self, frame: Http2Frame) -> LibResult<u32> {
+        match frame.ftype {
+            
+            _ => (),
+        }
         todo!()
+    }
+
+    pub fn get_or_open_stream(&self, stream_id: u32) -> RefMut<'_, u32, Http2Data> {
+        if let Some(shard) = self.streams.get_mut(&stream_id) {
+            shard
+        }
+        else {
+            self.streams.insert(stream_id, Http2Data::empty(stream_id, *self.settings.lock().unwrap()));
+            self.streams.get_mut(&stream_id).unwrap()
+        }
     }
 
 
@@ -95,19 +128,19 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         self.netw.lock().await.write_all(&Http2Frame::create(ftype, flags, stream_id, priority, payload, padding)).await
     }
 
-    pub async fn send_data(&self, stream_id: u32, end: bool, buf: &[u8]) -> io::Result<()> {
+    pub async fn send_data(&self, stream_id: u32, end: bool, buf: &[u8]) -> LibResult<()> {
         // let mut stream = 
         let notify =
         if let Some(mut shard) = self.streams.get_mut(&stream_id) {
             if shard.self_end_body || shard.reset {
-                return Err(io::Error::new(io::ErrorKind::NotConnected, "stream closed"))
+                return Err(LibError::StreamClosed)
             }
 
             shard.self_end_body = end;
             shard.notify.clone()
         }
         else {
-            return Err(io::Error::new(io::ErrorKind::NotFound, "stream doesnt exist"))
+            return Err(LibError::InvalidStream)
         };
 
         if buf.len() == 0 {
@@ -131,7 +164,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                 let mut stream = self.streams.get_mut(&stream_id).unwrap();
 
                 if stream.reset {
-                    return Err(io::Error::new(io::ErrorKind::NotConnected, "stream closed while sending"))
+                    return Err(LibError::ResetStream)
                 }
 
                 let max = min(buf.len() - pos, min(*window, stream.window));
@@ -183,10 +216,12 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         todo!()
     }
 
-    pub async fn send_headers(&self, stream_id: u32, end: bool, headers: &[(&[u8], &[u8])]) -> io::Result<()> {
-        if let Some(mut shard) = self.streams.get_mut(&stream_id) {
+    pub async fn send_headers(&self, stream_id: u32, end: bool, headers: &[(&[u8], &[u8])]) -> LibResult<()> {
+        {
+            let mut shard = self.get_or_open_stream(stream_id);
+
             if shard.self_end_head || shard.self_end_body {
-                return Err(io::Error::new(io::ErrorKind::NotConnected, "stream closed"))
+                return Err(LibError::StreamClosed)
             }
 
             shard.self_end_head = true;

@@ -1,9 +1,9 @@
-use std::{collections::HashMap, io, pin::Pin};
+use std::{collections::HashMap, pin::Pin};
 
 use rand::Rng;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 
-use crate::{http1::get_chunk, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType, HttpVersion, ReadStream, Stream, WriteStream}, websocket::socket::{MAGIC, WebSocket}};
+use crate::{http1::get_chunk, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType, HttpVersion, LibError, LibResult, ReadStream, Stream, WriteStream}, websocket::socket::{MAGIC, WebSocket}};
 
 use base64::{Engine, engine::general_purpose::STANDARD as b64std};
 
@@ -64,11 +64,13 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         self.headers.remove(header)
     }
 
-    pub async fn send_head(&mut self) -> io::Result<()> {
+    pub async fn send_head(&mut self) -> LibResult<()> {
         if !self.sent_head && self.version == HttpVersion::Http09 {
             let head = format!("GET {}\r\n", &self.path);
             self.netw.write_all(head.as_bytes()).await?;
             self.sent_head = true;
+            self.response.vcs_complete = true;
+            self.response.head_complete = true;
             Ok(())
         }
         else if !self.sent_head{
@@ -87,11 +89,11 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
             Ok(())
         }
         else{
-            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+            Err(LibError::ConnectionClosed)
         }
     }
 
-    pub async fn write(&mut self, body: &[u8]) -> io::Result<()> {
+    pub async fn write(&mut self, body: &[u8]) -> LibResult<()> {
         if !self.sent && self.version == HttpVersion::Http09 {
             if !self.sent_head { self.send_head().await? }
             Ok(())
@@ -105,10 +107,10 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
             Ok(())
         }
         else{
-            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+            Err(LibError::ConnectionClosed)
         }
     }
-    pub async fn send(&mut self, body: &[u8]) -> io::Result<()> {
+    pub async fn send(&mut self, body: &[u8]) -> LibResult<()> {
         if !self.sent && self.version == HttpVersion::Http09 {
             if !self.sent_head { self.send_head().await? }
             self.sent = true;
@@ -127,14 +129,14 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
             Ok(())
         }
         else{
-            Err(io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+            Err(LibError::ConnectionClosed)
         }
     }
-    pub async fn flush(&mut self) -> io::Result<()> {
-        self.netw.flush().await
+    pub async fn flush(&mut self) -> LibResult<()> {
+        self.netw.flush().await.map_err(|e| e.into())
     }
 
-    pub async fn read_response(&mut self) -> io::Result<&HttpResponse> {
+    pub async fn read_response(&mut self) -> LibResult<&HttpResponse> {
         self.line_buf.clear();
 
         if !self.response.valid {
@@ -198,7 +200,7 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
                 self.netr.read_exact(&mut self.response.body).await?;
                 self.response.body_complete = true;
             }
-            else if self.response.version == HttpVersion::Http10 {
+            else if self.response.version == HttpVersion::Http10 || self.response.version == HttpVersion::Http09 {
                 self.netr.read_to_end(&mut self.response.body).await?;
                 self.response.body_complete = true;
             }
@@ -208,11 +210,11 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         }
         Ok(&self.response)
     }
-    pub async fn read_until_complete(&mut self) -> io::Result<&HttpResponse>{
+    pub async fn read_until_complete(&mut self) -> LibResult<&HttpResponse>{
         while self.response.valid && !self.response.body_complete { let _ = self.read_response().await?; }
         Ok(&self.response)
     }
-    pub async fn read_until_head_complete(&mut self) -> io::Result<&HttpResponse>{
+    pub async fn read_until_head_complete(&mut self) -> LibResult<&HttpResponse>{
         while self.response.valid && !self.response.head_complete { let _ = self.read_response().await?; }
         Ok(&self.response)
     }
@@ -227,8 +229,8 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         self.sent = false;
     }
 
-    pub async fn websocket_upgrade(&mut self, key: &[u8]) -> io::Result<String> {
-        if key.len() != 16 { return Err(io::Error::new(io::ErrorKind::Other, "key has invalid length")); }
+    pub async fn websocket_upgrade(&mut self, key: &[u8]) -> LibResult<String> {
+        if key.len() != 16 { return Err(LibError::Invalid); }
 
         let wskey = b64std.encode(key);
         
@@ -243,27 +245,27 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
     pub fn websocket_direct(self) -> WebSocket<BufReader<R>, W> {
         WebSocket::with_split(self.netr, self.netw)
     }
-    pub async fn websocket_unchecked(mut self) -> io::Result<WebSocket<BufReader<R>, W>> {
+    pub async fn websocket_unchecked(mut self) -> LibResult<WebSocket<BufReader<R>, W>> {
         let mut key = [0; 16];
         rand::rng().fill(&mut key);
         let _ = self.websocket_upgrade(&key).await?;
         
         Ok(self.websocket_direct())
     }
-    pub async fn websocket_lazy(mut self) -> io::Result<WebSocket<BufReader<R>, W>>{
+    pub async fn websocket_lazy(mut self) -> LibResult<WebSocket<BufReader<R>, W>>{
         let mut key = [0; 16];
         rand::rng().fill(&mut key);
         let _ = self.websocket_upgrade(&key).await?;
         
         let res = self.read_until_head_complete().await?;
         if res.code != 101 {
-            Err(io::Error::new(io::ErrorKind::Other, "upgrade not accepted"))
+            Err(LibError::NotAccepted)
         }
         else {
             Ok(self.websocket_direct())
         }
     }
-    pub async fn websocket_strict(mut self) -> io::Result<WebSocket<BufReader<R>, W>>{
+    pub async fn websocket_strict(mut self) -> LibResult<WebSocket<BufReader<R>, W>>{
         let mut key = [0; 16];
         rand::rng().fill(&mut key);
         let bkey = self.websocket_upgrade(&key).await?;
@@ -275,13 +277,13 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         
         let res = self.read_until_head_complete().await?;
         if res.code != 101 {
-            Err(io::Error::new(io::ErrorKind::Other, "upgrade not accepted"))
+            Err(LibError::NotAccepted)
         }
         else if let Some(reskey) = res.headers.get("sec-websocket-accept") && reskey[0] == acckey {
             Ok(self.websocket_direct())
         }
         else {
-            Err(io::Error::new(io::ErrorKind::Other, "malformed upgrade"))
+            Err(LibError::InvalidUpgrade)
         }
     }
 }
@@ -293,17 +295,17 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for Http1Request<R, W>{
     fn get_response(&self) -> &HttpResponse {
         &self.response
     }
-    fn read_response(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, std::io::Error>> + Send + '_>> {
+    fn read_response(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, LibError>> + Send + '_>> {
         Box::pin(async move {
             self.read_response().await
         })
     }
-    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, std::io::Error>> + Send + '_>> {
+    fn read_until_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, LibError>> + Send + '_>> {
         Box::pin(async move {
             self.read_until_complete().await
         })
     }
-    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, std::io::Error>> + Send + '_>> {
+    fn read_until_head_complete(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpResponse, LibError>> + Send + '_>> {
         Box::pin(async move {
             self.read_until_head_complete().await
         })
@@ -320,17 +322,17 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for Http1Request<R, W>{
     fn set_path(&mut self, path: String) {
         self.path = path;
     }
-    fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+    fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
         Box::pin(async move {
             self.write(body).await
         })
     }
-    fn send<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+    fn send<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
         Box::pin(async move {
             self.send(body).await
         })
     }
-    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>> {
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
         Box::pin(async move{
             self.flush().await
         })

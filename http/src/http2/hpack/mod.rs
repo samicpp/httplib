@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt::Display};
 
 pub mod huffman;
 pub mod encoder;
@@ -201,6 +201,20 @@ pub enum HeaderType{
     NotIndexed,
     NeverIndexed,
     TableSizeChange,
+}
+
+
+#[derive(Debug)]
+pub enum HpackError{
+    InvalidHeaderField,
+}
+impl std::error::Error for HpackError { }
+impl Display for HpackError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidHeaderField => write!(f, "Invalid header field"),
+        }
+    }
 }
 
 

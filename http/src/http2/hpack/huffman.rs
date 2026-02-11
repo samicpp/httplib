@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::http2::hpack::Biterator;
 
@@ -284,6 +284,32 @@ pub enum HuffmanError{
     InvalidPadding,
     EOSInString,
 }
+impl std::error::Error for HuffmanError {
+    fn cause(&self) -> Option<&dyn std::error::Error> {
+        None
+    }
+    fn description(&self) -> &str {
+        match self {
+            Self::InvalidCodeTable => "code table could not be used",
+            Self::PaddingTooLarge => "padding too large",
+            Self::InvalidPadding => "padding is invalid",
+            Self::EOSInString => "eos in middle of string",
+        }
+    }
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+impl Display for HuffmanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidCodeTable => "Code table could not be used",
+            Self::PaddingTooLarge => "Padding too large",
+            Self::InvalidPadding => "Padding is invalid",
+            Self::EOSInString => "EOS in middle of string",
+        })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Huffman{
@@ -296,8 +322,8 @@ impl Huffman {
     pub fn new() -> Self {
         Self::from(HUFFMAN_TABLE).unwrap()
     }
-    pub fn from(table: &[(u32, u8)]) -> Option<Self> {
-        if table.len() != 257 { return None; }
+    pub fn from(table: &[(u32, u8)]) -> Result<Self, HuffmanError> {
+        if table.len() != 257 { return Err(HuffmanError::InvalidCodeTable); }
 
         let mut code_from_symbol = [0; 257];
         let mut len_from_symbol = [0; 257];
@@ -323,11 +349,11 @@ impl Huffman {
             }
         }
 
-        Some(Self {
+        Ok(Self {
             code_from_symbol,
             len_from_symbol,
             table: htable,
-            eos: eos?,
+            eos: eos.ok_or(HuffmanError::InvalidCodeTable)?,
         })
     }
 

@@ -2,6 +2,8 @@ use std::{fmt::Display, collections::HashMap, pin::Pin};
 
 use tokio::io::{AsyncRead, AsyncWrite};
 
+use crate::http2::hpack::{HpackError, huffman::HuffmanError};
+
 
 
 pub trait ReadStream: AsyncRead + Unpin + Send + Sync {}
@@ -205,18 +207,18 @@ pub trait HttpSocket{
     fn get_type(&self) -> HttpType;
 
     fn get_client<'_a>(&'_a self) -> &'_a HttpClient;
-    fn read_client<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpClient, std::io::Error>> + Send + '_a>>;
-    fn read_until_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpClient, std::io::Error>> + Send + '_a>>;
-    fn read_until_head_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpClient, std::io::Error>> + Send + '_a>>;
+    fn read_client<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpClient, LibError>> + Send + '_a>>;
+    fn read_until_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpClient, LibError>> + Send + '_a>>;
+    fn read_until_head_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpClient, LibError>> + Send + '_a>>;
 
     fn add_header(&mut self, header: &str, value: &str);
     fn set_header(&mut self, header: &str, value: &str);
     fn del_header(&mut self, header: &str) -> Option<Vec<String>>;
     
     fn set_status(&mut self, code: u16, message: String);
-    fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
-    fn close<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
-    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+    fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>>;
+    fn close<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>>;
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>>;
 }
 
 // pub type DynHttpSocket = Box<dyn HttpSocket>;
@@ -272,12 +274,104 @@ pub trait HttpRequest{
     fn set_method(&mut self, method: HttpMethod);
     fn set_path(&mut self, path: String);
 
-    fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
-    fn send<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
-    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), std::io::Error>> + Send + 'a>>;
+    fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>>;
+    fn send<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>>;
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>>;
 
     fn get_response<'_a>(&'_a self) -> &'_a HttpResponse;
-    fn read_response<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, std::io::Error>> + Send + '_a>>;
-    fn read_until_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, std::io::Error>> + Send + '_a>>;
-    fn read_until_head_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, std::io::Error>> + Send + '_a>>;
+    fn read_response<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, LibError>> + Send + '_a>>;
+    fn read_until_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, LibError>> + Send + '_a>>;
+    fn read_until_head_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, LibError>> + Send + '_a>>;
 }
+
+
+#[derive(Debug)]
+pub enum LibError {
+    Io(std::io::Error),
+    Huffman(HuffmanError),
+    Hpack(HpackError),
+    
+    NotConnected,
+    ConnectionClosed,
+    StreamClosed,
+    HeadersSent,
+
+    Invalid,
+    InvalidFrame,
+    InvalidUpgrade,
+    InvalidStream,
+
+    NotAccepted,
+    ResetStream,
+    Goaway,
+}
+impl LibError {
+    pub fn io(&self) -> Option<&std::io::Error> { if let Self::Io(io) = self { Some(io) } else { None } }
+    pub fn huffman(&self) -> Option<&HuffmanError> { if let Self::Huffman(err) = self { Some(err) } else { None } }
+    pub fn hpack(&self) -> Option<&HpackError> { if let Self::Hpack(err) = self { Some(err) } else { None } }
+    
+    pub fn is_not_connected(&self) -> bool { if let Self::NotConnected = self { true } else { false } }
+    pub fn is_connection_closed(&self) -> bool { if let Self::ConnectionClosed = self { true } else { false } }
+    pub fn is_stream_closed(&self) -> bool { if let Self::StreamClosed = self { true } else { false } }
+    pub fn is_headers_sent(&self) -> bool { if let Self::HeadersSent = self { true } else { false } }
+    
+    pub fn is_invalid(&self) -> bool { if let Self::Invalid = self { true } else { false } }
+    pub fn is_invalid_frame(&self) -> bool { if let Self::InvalidFrame = self { true } else { false } }
+    pub fn is_invalid_upgrade(&self) -> bool { if let Self::InvalidUpgrade = self { true } else { false } }
+    pub fn is_invalid_stream(&self) -> bool { if let Self::InvalidStream = self { true } else { false } }
+    
+    pub fn is_not_accepted(&self) -> bool { if let Self::NotAccepted = self { true } else { false } }
+    pub fn is_reset_stream(&self) -> bool { if let Self::ResetStream = self { true } else { false } }
+    pub fn is_goaway(&self) -> bool { if let Self::Goaway = self { true } else { false } }
+}
+impl From<std::io::Error> for LibError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+impl Display for LibError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(err) => write!(f, "{}", err.to_string()),
+            Self::Huffman(err) => write!(f, "{}", err.to_string()),
+            Self::Hpack(err) => writeln!(f, "{}", err.to_string()),
+
+            Self::NotConnected => writeln!(f, "Not connected to endpoint"),
+            Self::ConnectionClosed => writeln!(f, "Connection is closed"),
+            Self::StreamClosed => writeln!(f, "Stream is closed"),
+            Self::HeadersSent => writeln!(f, "Headers are sent"),
+
+            Self::Invalid => writeln!(f, "Invalid"),
+            Self::InvalidFrame => writeln!(f, "Invalid frame"),
+            Self::InvalidUpgrade => writeln!(f, "Invalid upgrade"),
+            Self::InvalidStream => writeln!(f, "Invalid stream"),
+
+            Self::NotAccepted => writeln!(f, "Not accepted"),
+            Self::ResetStream => writeln!(f, "stream reset"),
+            Self::Goaway => writeln!(f, "Goaway received"),
+        }
+    }
+}
+impl std::error::Error for LibError {
+    fn cause(&self) -> Option<&dyn std::error::Error> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::Huffman(e) => Some(e),
+            Self::Hpack(e) => Some(e),
+            _ => None,
+        }
+    }
+    /*fn description(&self) -> &str {
+        self.to_string()
+    }*/
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::Huffman(e) => Some(e),
+            Self::Hpack(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+pub type LibResult<T> = Result<T, LibError>;
+
