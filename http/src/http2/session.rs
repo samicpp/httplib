@@ -22,6 +22,8 @@ impl Mode {
 
 #[derive(Debug)]
 pub struct Http2Data {
+    pub new: bool,
+
     pub window: usize,
     pub notify: Arc<Notify>,
 
@@ -37,6 +39,10 @@ pub struct Http2Data {
     pub head: Vec<u8>,
     pub headers: Vec<(Vec<u8>, Vec<u8>)>,
 
+    pub head_complete: Arc<Notify>,
+    pub body_received: Arc<Notify>,
+    // pub body_complete: Arc<Notify>,
+
     pub ascociated: Option<u32>,
     pub promising: Option<u32>, 
     pub promise: Vec<u8>,
@@ -45,6 +51,7 @@ pub struct Http2Data {
 impl Http2Data {
     pub fn empty(stream_id: u32, sett: Http2Settings) -> Self {
         Self {
+            new: true,
             window: sett.initial_window_size.unwrap_or(65535) as usize,
             notify: Arc::new(Notify::new()),
             stream_id,
@@ -56,6 +63,9 @@ impl Http2Data {
             body: Vec::new(),
             head: Vec::new(),
             headers: Vec::new(),
+            head_complete: Arc::new(Notify::new()),
+            body_received: Arc::new(Notify::new()),
+            // body_complete: Arc::new(Notify::new()),
             ascociated: None,
             promising: None,
             promise: Vec::new(),
@@ -128,6 +138,8 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         self.handle(frame, true).await
     }
     pub async fn handle(&self, frame: Http2Frame, strict: bool) -> LibResult<Option<u32>> {
+        // strict check wether frame fields are valid, e.g. allowed flags
+
         match frame.ftype {
             Http2FrameType::Data => {                
                 if let Some(mut shard) = self.streams.get_mut(&frame.stream_id) {
@@ -137,7 +149,10 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                     
                     if frame.is_end_stream() { shard.end_body = true }
 
+                    shard.body_received.notify_waiters();
+
                     drop(shard);
+                    self.send_window_update(0, frame.length).await?;
                     self.send_window_update(frame.stream_id, frame.length).await?;
 
                     Ok(None)
@@ -158,6 +173,9 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                         if frame.is_end_headers() {
                             let mut dec = decoder.decode_all(&shard.head).ok_or(HpackError::InvalidHeaderField)?;
                             shard.headers.append(&mut dec);
+                            shard.end_head = true;
+                            shard.head.clear();
+                            shard.head_complete.notify_waiters();
                         }
                         if frame.is_end_stream() { shard.end_body = true }
                         Ok(None)
@@ -171,6 +189,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                         if frame.is_end_headers() {
                             stream.end_head = true;
                             stream.headers.append(&mut decoder.decode_all(&stream.head).ok_or(HpackError::InvalidHeaderField)?);
+                            stream.head.clear();
                         }
                         
                         self.streams.insert(frame.stream_id, stream);
@@ -230,6 +249,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
 
                         if frame.is_end_headers() {
                             stream.push_headers.append(&mut decoder.decode_all(&stream.promise).ok_or(HpackError::InvalidHeaderField)?);
+                            stream.promise.clear();
                         }
                         if frame.is_end_stream() { stream.end_body = true }
 
@@ -287,7 +307,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
             },
             Http2FrameType::Continuation => {
                 let mut decoder = self.decoder.lock().await;
-
+                // strict verify wether headers has opened
                 if let Some(mut shard) = self.streams.get_mut(&frame.stream_id) {
                     if let Some(promising) = shard.promising && let Some(mut promised) = self.streams.get_mut(&promising) {
                         promised.promise.extend_from_slice(frame.get_payload());
@@ -295,6 +315,8 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                         if frame.is_end_headers() {
                             let mut dec = decoder.decode_all(&promised.promise).ok_or(HpackError::InvalidHeaderField)?;
                             promised.push_headers.append(&mut dec);
+                            promised.promise.clear();
+                            shard.promising = None;
                             Ok(Some(promising))
                         }
                         else {
@@ -308,7 +330,16 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                         if frame.is_end_headers() {
                             let mut dec = decoder.decode_all(&shard.head).ok_or(HpackError::InvalidHeaderField)?;
                             shard.headers.append(&mut dec);
-                            Ok(Some(frame.stream_id))
+                            shard.end_head = true;
+                            shard.head.clear();
+                            shard.head_complete.notify_waiters();
+
+                            if shard.new {
+                                Ok(Some(frame.stream_id))
+                            }
+                            else {
+                                Ok(None)
+                            }
                         }
                         else {
                             Ok(None)
@@ -440,7 +471,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
             self.write_frame(Http2FrameType::Data, 1, stream_id, None, None, None).await?;
         }
 
-        todo!()
+        Ok(())
     }
 
     pub async fn send_headers(&self, stream_id: u32, end: bool, headers: &[(&[u8], &[u8])]) -> LibResult<()> {
@@ -450,7 +481,10 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                 // doing !self.mode.is_(oposite)() would be more optimized maybe
                 Some(s) if self.mode.is_server() || self.mode.is_ambiguous() => s,
                 None if self.mode.is_client() || self.mode.is_ambiguous() => {
-                    self.streams.insert(stream_id, Http2Data::empty(stream_id, *self.settings.lock().unwrap()));
+                    let mut stream = Http2Data::empty(stream_id, *self.settings.lock().unwrap());
+                    stream.new = false;
+
+                    self.streams.insert(stream_id, stream);
                     self.streams.get_mut(&stream_id).unwrap()
                 }
                 _ => return Err(LibError::InvalidStream),
@@ -508,7 +542,9 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         Ok(())
     }
 
-    // pub async fn send_priority(&self, stream_id: u32) -> io::Result<()> { todo!() }
+    pub async fn send_priority(&self, stream_id: u32, dependency: u32, weight: u8) -> io::Result<()> {
+        self.write_frame(Http2FrameType::Priority, 0, stream_id, None, Some(&[(dependency >> 24) as u8, (dependency >> 16) as u8, (dependency >> 8) as u8, dependency as u8, weight]), None).await
+    }
     
     pub async fn send_rst_stream(&self, stream_id: u32, code: u32) -> io::Result<()> { 
         self.write_frame(Http2FrameType::RstStream, 0, stream_id, None, Some(&u32::to_be_bytes(code)), None).await
@@ -518,7 +554,75 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         self.write_frame(Http2FrameType::Settings, 0, 0, None, Some(&settings.to_vec()), None).await
     }
     
-    // pub async fn send_push_promise(&self, stream_id: u32) -> io::Result<()> { todo!() }
+    pub async fn send_push_promise(&self, ascociate_id: u32, promise_id: u32, headers: &[(&[u8], &[u8])]) -> LibResult<()> {
+        {
+            let mut stream =
+            if self.mode.is_client() {
+                return Err(LibError::ProtocolError)
+            }
+            else if self.streams.contains_key(&promise_id) || !self.streams.contains_key(&ascociate_id) {
+                return Err(LibError::InvalidStream)
+            }
+            else {
+                Http2Data::empty(promise_id, *self.settings.lock().unwrap())
+            };
+
+            stream.ascociated = Some(ascociate_id);
+
+            self.streams.insert(promise_id, stream);
+        }
+
+        let mut hpacke = self.encoder.lock().await;
+        let enc = {
+            let mut buff = Vec::new();
+
+            for &(nam, val) in headers {
+                hpacke.encode(&mut buff, HeaderType::NotIndexed, nam, val, None)?;
+            }
+
+            buff
+        };
+        let mfs = self.settings.lock().unwrap().max_frame_size.unwrap_or(16384) as usize;
+        
+        let mut pos = 0;
+        let mut buff = Vec::with_capacity(9 + enc.len() / mfs * 9 + enc.len());
+
+        
+        if enc.len() + 4 < mfs {
+            let mut pay = Vec::with_capacity(enc.len() + 4);
+            pay.extend_from_slice(&u32::to_be_bytes(promise_id));
+            pay.extend_from_slice(&enc);
+
+            buff.append(&mut Http2Frame::create(Http2FrameType::PushPromise, 4, ascociate_id, None, Some(&pay), None));
+        }
+        else {
+            let mut pay = Vec::with_capacity(mfs);
+            pay.extend_from_slice(&u32::to_be_bytes(promise_id));
+            pay.extend_from_slice(&enc[pos..pos + mfs - 4]);
+
+            buff.append(&mut Http2Frame::create(Http2FrameType::PushPromise, 0, ascociate_id, None, Some(&pay), None));
+            pos += mfs - 4;
+
+            let mut chunks = enc.len() / mfs;
+
+            if enc.len() % mfs == 0 {
+                chunks -= 1;
+                // rem += mfs;
+            }
+
+            for _ in 0..chunks {
+                buff.append(&mut Http2Frame::create(Http2FrameType::Continuation, 0, ascociate_id, None, Some(&enc[pos..pos + mfs]), None));
+                pos += mfs;
+            }
+
+            buff.append(&mut Http2Frame::create(Http2FrameType::Continuation, 4, ascociate_id, None, Some(&enc[pos..]), None));
+        }
+
+        self.netw.lock().await.write_all(&buff).await?;
+        drop(hpacke);
+
+        Ok(())
+    }
     
     pub async fn send_ping(&self, ack: bool, buf: &[u8]) -> io::Result<()> { 
         self.write_frame(Http2FrameType::Ping, if ack { 1 } else { 0 }, 0, None, Some(buf), None).await

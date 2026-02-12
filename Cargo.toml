@@ -2,3 +2,5 @@
 members = [ "core", "quic", "http", "lib" ]
 exclude = [ "quinn" ]
 resolver = "3"
+# edition = "2024"
+# authors = ["samicpp"]
