@@ -293,7 +293,7 @@ async fn http2_test(){
     let opened;
     loop {
         let frame = h2.read_frame().await.unwrap();
-        println!("\x1b[35m{:?}\x1b[0m {:?}", frame.ftype, frame);
+        println!("\x1b[36m{:?}\x1b[0m {:?}", frame.ftype, frame.source);
         let id = h2.handle(frame).await.unwrap();
 
         if let Some(id) = id {
