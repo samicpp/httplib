@@ -256,7 +256,7 @@ checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "http"
-version = "1.6.0"
+version = "1.6.1"
 dependencies = [
  "base64",
  "dashmap",
@@ -443,6 +443,7 @@ name = "quic"
 version = "0.1.0"
 dependencies = [
  "httprs_core",
+ "socket2",
  "tokio",
 ]
 
@@ -754,9 +755,9 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "socket2"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17129e116933cf371d018bb80ae557e889637989d8638274fb25622827b03881"
+checksum = "86f4aa3ad99f2088c990dfa82d367e19cb29268ed67c574d10d0a4bfe71f07e0"
 dependencies = [
  "libc",
  "windows-sys 0.60.2",

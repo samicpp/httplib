@@ -1,6 +1,6 @@
 #[cfg(test)]
 
-use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame, http2::hpack::{Biterator, decoder::Decoder, HeaderType, encoder::Encoder}};
+use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame, http2::{hpack::{Biterator, decoder::Decoder, HeaderType, encoder::Encoder}, core::{Http2Frame, Http2FrameType}}};
 
 #[test]
 fn two_is_two(){
@@ -211,5 +211,37 @@ fn hpack_encode(){
 
     dbg!(&buff);
     assert_eq!(buff.as_slice(), encoded);
+
+}
+
+#[test]
+fn http2_frame() {
+    let frame_raw = [
+        0u8, 0, 19, 
+        0, 1 | 8 | 32, 
+        0, 0, 0, 3, 
+        2,
+        0, 0, 0, 1, 2,
+        0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64,
+        0x68, 0x69,
+    ];
+    
+    let frame = Http2Frame::from_owned(frame_raw.to_vec()).unwrap();
+    let frame_buff = Http2Frame::create(frame.ftype, frame.flags, frame.stream_id, Some(frame.get_priority()), Some(frame.get_payload()), Some(frame.get_padding()));
+
+    assert_eq!(frame.is_end_headers(), false);
+    assert_eq!(frame.is_end_stream(), true);
+    assert_eq!(frame.is_padded(), true);
+    assert_eq!(frame.is_priority(), true);
+    assert_eq!(frame.length, 19);
+    assert_eq!(frame.ftype, Http2FrameType::Data);
+    assert_eq!(frame.type_byte, 0);
+    assert_eq!(frame.flags, 41);
+    assert_eq!(frame.stream_id, 3);
+    assert_eq!(frame.get_priority(), &[0, 0, 0, 1, 2]);
+    assert_eq!(frame.get_payload(), b"hello world");
+    assert_eq!(frame.get_padding(), b"hi");
+
+    assert_eq!(frame_buff.as_slice(), &frame_raw);
 
 }

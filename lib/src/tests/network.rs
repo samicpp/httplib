@@ -2,8 +2,8 @@
 #![allow(unused_imports)]
 #![cfg(test)]
 
-use std::{net::{SocketAddr, ToSocketAddrs}, sync::{Arc, atomic::AtomicBool}};
-use http::{extra::PolyHttpSocket, http1::{client::Http1Request, server::Http1Socket}, shared::{HttpRequest, HttpSocket, HttpVersion, ReadStream, WriteStream}, websocket::{core::WebSocketOpcode, socket::WebSocket}};
+use std::{net::{SocketAddr, ToSocketAddrs}, sync::{Arc, atomic::AtomicBool}, time::Duration};
+use http::{extra::PolyHttpSocket, http1::{client::Http1Request, server::Http1Socket}, http2::{core::Http2Settings, session::Http2Session}, shared::{HttpRequest, HttpSocket, HttpVersion, LibError, ReadStream, WriteStream}, websocket::{core::WebSocketOpcode, socket::WebSocket}};
 use tokio::{io::AsyncReadExt, net::TcpListener, sync::Mutex};
 use crate::{clients::{tcp_connect, tls_upgrade}, httpcpp::server_test, servers::{TcpServer, tcp_serve}};
 
@@ -274,3 +274,56 @@ async fn ws_mirror(){
     }
 }
 
+
+#[ignore = "requires user interaction"]
+#[tokio::test]
+async fn http2_test(){
+    let listener = TcpListener::bind("0.0.0.0:8196").await.unwrap();
+    
+    let (sock, addr) = listener.accept().await.unwrap();
+    println!("\x1b[38;5;8m{addr:?}\x1b[0m");
+
+    let h2 = Http2Session::new_server(sock);
+    let h2 = Arc::new(h2);
+    println!("created session");
+
+    assert_eq!(h2.read_preface().await.unwrap(), true);
+    h2.send_settings(Http2Settings::default_no_push()).await.unwrap();
+
+    let opened;
+    loop {
+        let frame = h2.read_frame().await.unwrap();
+        println!("\x1b[35m{:?}\x1b[0m {:?}", frame.ftype, frame);
+        let id = h2.handle(frame).await.unwrap();
+
+        if let Some(id) = id {
+            opened = id;
+            break;
+        }
+    }
+    println!("stream was opened {opened}");
+
+
+    let cl = h2.clone();
+    let join = tokio::spawn(async move {
+        let h2 = cl;
+        
+        loop {
+            match h2.next().await {
+                Err(LibError::Io(_)) => break,
+                res => res.unwrap(),
+            };
+        }
+        println!("background done");
+    });
+    println!("background loop");
+
+    h2.send_headers(opened, false, &[(b":status", b"200"), (b"content-type", b"text/plain")]).await.unwrap();
+    h2.send_data(opened, true, b"herro world").await.unwrap();
+    // h2.send_goaway(0, 0, b"shutdown").await.unwrap();
+    println!("done");
+
+    // tokio::time::sleep(Duration::from_millis(1000)).await;
+
+    join.await.unwrap();
+}

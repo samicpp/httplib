@@ -79,6 +79,7 @@ pub struct Http2Session<R: ReadStream, W: WriteStream>{
     pub netr: AsyncMutex<R>,
     pub netw: AsyncMutex<W>,
     pub mode: Mode,
+    pub strict: bool,
 
     pub decoder: AsyncMutex<Decoder<'static>>,
     pub encoder: AsyncMutex<Encoder<'static>>,
@@ -97,16 +98,24 @@ pub struct Http2Session<R: ReadStream, W: WriteStream>{
 impl<S: Stream> Http2Session<ReadHalf<S>, WriteHalf<S>> {
     pub fn new(net: S) -> Self {
         let (netr, netw) = tokio::io::split(net);
-        Self::with(netr, netw, Mode::Ambiguous, Http2Settings::default())
+        Self::with(netr, netw, Mode::Ambiguous, true, Http2Settings::default())
+    }
+    pub fn new_client(net: S) -> Self {
+        let (netr, netw) = tokio::io::split(net);
+        Self::with(netr, netw, Mode::Client, true, Http2Settings::default())
+    }
+    pub fn new_server(net: S) -> Self {
+        let (netr, netw) = tokio::io::split(net);
+        Self::with(netr, netw, Mode::Server, true, Http2Settings::default())
     }
 }
 impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
-    pub fn with(netr: R, netw: W, mode: Mode, settings: Http2Settings) -> Self {
+    pub fn with(netr: R, netw: W, mode: Mode, strict: bool, settings: Http2Settings) -> Self {
         let netr = AsyncMutex::new(netr);
         let netw = AsyncMutex::new(netw);
 
         Self {
-            netr, netw, mode,
+            netr, netw, mode, strict,
             decoder: AsyncMutex::new(Decoder::new(settings.header_table_size.unwrap_or(4096) as usize)),
             encoder: AsyncMutex::new(Encoder::new(settings.header_table_size.unwrap_or(4096) as usize)),
             max_stream_id: SyncMutex::new(0),
@@ -135,9 +144,9 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
     }
     pub async fn next(&self) -> LibResult<Option<u32>> {
         let frame = self.read_frame().await?;
-        self.handle(frame, true).await
+        self.handle(frame).await
     }
-    pub async fn handle(&self, frame: Http2Frame, strict: bool) -> LibResult<Option<u32>> {
+    pub async fn handle(&self, frame: Http2Frame) -> LibResult<Option<u32>> {
         // strict check wether frame fields are valid, e.g. allowed flags
 
         match frame.ftype {
@@ -351,7 +360,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                 }
             },
             Http2FrameType::Invalid(_) => {
-                if strict {
+                if self.strict {
                     Err(LibError::ProtocolError)
                 }
                 else {
@@ -439,13 +448,31 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                 let rem = max % mfs;
 
                 for _ in 0..chunks {
-                    buff.append(&mut Http2Frame::create(Http2FrameType::Data, 0, stream_id, None, Some(&buf[pos..pos + mfs]), None));
+                    let end_pos = pos + mfs;
+                    
+                    if end_pos == buf.len() {
+                        buff.append(&mut Http2Frame::create(Http2FrameType::Data, if end { 1 } else { 0 }, stream_id, None, Some(&buf[pos..end_pos]), None));
+                    }
+                    else {
+                        buff.append(&mut Http2Frame::create(Http2FrameType::Data, 0, stream_id, None, Some(&buf[pos..end_pos]), None));
+                    }
+
                     pos += mfs;
                 }
 
-                buff.append(&mut Http2Frame::create(Http2FrameType::Data, 0, stream_id, None, Some(&buf[pos..pos + rem]), None));
-                pos += rem;
 
+                let end_pos = pos + rem;
+
+                if end_pos == buf.len() {
+                    buff.append(&mut Http2Frame::create(Http2FrameType::Data, if end { 1 } else { 0 }, stream_id, None, Some(&buf[pos..end_pos]), None));
+                }
+                else {
+                    buff.append(&mut Http2Frame::create(Http2FrameType::Data, 0, stream_id, None, Some(&buf[pos..end_pos]), None));
+                }
+
+                pos += rem;
+                
+                
                 self.netw.lock().await.write_all(&buff).await?;
                 buff.clear();
             }
@@ -456,19 +483,10 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
             else if ncws == 0 {
                 self.notify.notified().await;
             }
-            else {
-                tokio::select! {
-                    _ = notify.notified() => {},
-                    _ = self.notify.notified() => {},
-                }
-            }
+            
 
             // window = self.window.lock().unwrap();
             // stream = self.streams.get_mut(&stream_id).unwrap();
-        }
-
-        if end {
-            self.write_frame(Http2FrameType::Data, 1, stream_id, None, None, None).await?;
         }
 
         Ok(())

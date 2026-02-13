@@ -23,11 +23,11 @@ pub struct Http2Frame{
 }
 impl Http2Frame{
     pub fn from_owned(source: Vec<u8>) -> Option<Self> {
-        let length = (source.get(0)? << 16) as u32 | (source.get(1)? << 8) as u32 | *source.get(2)? as u32;
-        let type_byte = *source.get(4)?;
-        let flags = *source.get(5)?;
-        let stream_id = (source.get(6)? << 24) as u32 | (source.get(7)? << 16) as u32 | (source.get(8)? << 8) as u32 | *source.get(9)? as u32;
-        let ftype = flags.into();
+        let length = u32::from_be_bytes([0, *source.get(0)?, *source.get(1)?, *source.get(2)?]);
+        let type_byte = *source.get(3)?;
+        let flags = *source.get(4)?;
+        let stream_id = u32::from_be_bytes([*source.get(5)?, *source.get(6)?, *source.get(7)?, *source.get(8)?]);
+        let ftype = type_byte.into();
 
         let mut pad_len = 0;
         let mut pay_start = 9;
@@ -38,13 +38,13 @@ impl Http2Frame{
             pay_start += 1;
             pay_end -= pad_len as usize;
         }
-        else if flags & 0x20 != 0 {
+        if flags & 0x20 != 0 {
             pay_start += 5;
         }
 
-        let priority = 9..pay_start;
+        let priority = if flags & 0x08 != 0 { 10 } else { 9 }..pay_start;
         let payload = pay_start..pay_end;
-        let padding = pay_end..length as usize;
+        let padding = pay_end..pay_end + pad_len as usize;
 
         Some(Self {
             source,
@@ -65,31 +65,33 @@ impl Http2Frame{
         let mut source = vec![0; 9];
         stream.read_exact(&mut source).await?;
 
-        let length = (source[0] << 16) as u32 | (source[1] << 8) as u32 | source[2] as u32;
-        let type_byte = source[4];
-        let flags = source[5];
-        let stream_id = (source[6] << 24) as u32 | (source[7] << 16) as u32 | (source[8] << 8) as u32 | source[9] as u32;
-        let ftype = flags.into();
+        let length = ((source[0] as u32) << 16) | ((source[1] as u32) << 8) | source[2] as u32;
+        let type_byte = source[3];
+        let flags = source[4];
+        let stream_id = ((source[5] as u32) << 24) | ((source[6] as u32) << 16) | ((source[7] as u32) << 8) | source[8] as u32;
+        let ftype = type_byte.into();
 
         let mut pad_len = 0;
         let mut pay_start = 9;
         let mut pay_end = length as usize + 9;
+
+        source.resize(9 + length as usize, 0);
+        stream.read_exact(&mut source[9..]).await?;
+        
 
         if flags & 0x08 != 0 {
             pad_len = source[pay_start];
             pay_start += 1;
             pay_end -= pad_len as usize;
         }
-        else if flags & 0x20 != 0 {
+        if flags & 0x20 != 0 {
             pay_start += 5;
         }
 
-        let priority = 9..pay_start;
+        let priority = if flags & 0x08 != 0 { 10 } else { 9 }..pay_start;
         let payload = pay_start..pay_end;
-        let padding = pay_end..length as usize;
+        let padding = pay_end..pay_end + pad_len as usize;
 
-        source.resize(9 + length as usize, 0);
-        stream.read_exact(&mut source[9..]).await?;
 
         Ok(Self {
             source,
@@ -109,13 +111,13 @@ impl Http2Frame{
 
     pub fn create(ftype: Http2FrameType, flags: u8, stream_id: u32, priority: Option<&[u8]>, payload: Option<&[u8]>, padding: Option<&[u8]>) -> Vec<u8> {
         let mut priority = priority.filter(|s| s.len() == 5);
-        let mut payload = payload.filter(|s| s.len() <= 16777216);
-        let mut padding = padding.filter(|s| s.len() <= 256);
+        let mut payload = payload.filter(|s| s.len() < 16777216);
+        let mut padding = padding.filter(|s| s.len() < 256);
 
         let length = 
             priority.and_then(|s| Some(s.len())).unwrap_or(0) + 
             payload.and_then(|s| Some(s.len())).unwrap_or(0) + 
-            padding.and_then(|s| Some(s.len())).unwrap_or(0);
+            padding.and_then(|s| Some(s.len() + 1)).unwrap_or(0);
 
         let length =         
         if length > 16777216 {
@@ -148,8 +150,8 @@ impl Http2Frame{
             start += 1;
         }
         if let Some(priority) = priority {
-            frame[start..start + 4].copy_from_slice(priority);
-            start += 4;
+            frame[start..start + 5].copy_from_slice(priority);
+            start += 5;
         }
         if let Some(payload) = payload {
             frame[start..start + payload.len()].copy_from_slice(payload);
@@ -163,8 +165,14 @@ impl Http2Frame{
     }
 
 
+    pub fn get_priority(&self) -> &[u8] {
+        &self.source[self.priority.clone()]
+    }
     pub fn get_payload(&self) -> &[u8] {
         &self.source[self.payload.clone()]
+    }
+    pub fn get_padding(&self) -> &[u8] {
+        &self.source[self.padding.clone()]
     }
 
     pub fn is_ack(&self) -> bool { self.flags & 0x01 != 0 }
@@ -174,7 +182,7 @@ impl Http2Frame{
     pub fn is_priority(&self) -> bool { self.flags & 0x20 != 0 }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Http2FrameType{
     Data,
     Headers,
@@ -243,6 +251,16 @@ impl Http2Settings {
             max_concurrent_streams: None,
             initial_window_size: None,
             max_frame_size: None,
+            max_header_list_size: None,
+        }
+    }
+    pub fn default_no_push() -> Self {
+        Self {
+            header_table_size: Some(4096),
+            enable_push: None,
+            max_concurrent_streams: None,
+            initial_window_size: Some(65535),
+            max_frame_size: Some(65535),
             max_header_list_size: None,
         }
     }
