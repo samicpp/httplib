@@ -65,15 +65,15 @@ int server_test(){
         while (!done) ;
         // ffi_future_await(fut);
         printf("taking result\n");
-        bundle = ffi_future_take_result(fut);
+        bundle = static_cast<FfiBundle>(ffi_future_take_result(fut));
     }
     printf("bundle ptr = %p\n", bundle);
     // if (!bundle) return 3;
 
-    auto ipaddr = get_addr_str(bundle);
+    auto ipaddr = get_addr_str(bundle->addr);
     printf("ip addr = %.*s\n", (int)ipaddr.len, ipaddr.ptr);
 
-    FfiSocket http = http1_new(bundle, 8 * 1024);
+    FfiSocket http = http1_new(bundle->stream, 8 * 1024);
 
     {
         bool done = false;

@@ -319,9 +319,16 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for Http1Request<R, W>{
     fn set_method(&mut self, method: HttpMethod) {
         self.method = method;
     }
+    fn set_scheme(&mut self, _: String) {
+        ()
+    }
     fn set_path(&mut self, path: String) {
         self.path = path;
     }
+    fn set_host(&mut self, host: String) {
+        self.set_header(&"Host", &host);
+    }
+
     fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
         Box::pin(async move {
             self.write(body).await

@@ -1,10 +1,12 @@
 use std::{io, net::SocketAddr, sync::Arc};
 
 use dashmap::DashMap;
-use http::{extra::PolyHttpSocket, http1::server::Http1Socket, http2::PREFACE, shared::Stream};
+use http::{extra::PolyHttpSocket, http1::server::Http1Socket, http2::PREFACE};
 use rustls::{ServerConfig, server::{ClientHello, ResolvesServerCert}, sign::CertifiedKey};
 use tokio::{io::{ReadHalf, WriteHalf}, net::{TcpListener, TcpStream}};
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
+
+use crate::DynStream;
 
 
 
@@ -26,7 +28,7 @@ where
     }
 }
 
-pub type DynHttpSocket = PolyHttpSocket<ReadHalf<Box<dyn Stream>>, WriteHalf<Box<dyn Stream>>>;
+pub type DynHttpSocket = PolyHttpSocket<ReadHalf<DynStream>, WriteHalf<DynStream>>;
 
 pub struct TcpServer{
     // cb: Arc<dyn Fn(SocketAddr, PolyHttpSocket<ReadHalf<TcpStream>, WriteHalf<TcpStream>>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + Sync + 'static>,

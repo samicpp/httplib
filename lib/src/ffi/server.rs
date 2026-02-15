@@ -4,12 +4,14 @@ use http::{http1::server::Http1Socket, shared::{HttpClient, HttpMethod, HttpSock
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use tokio::io::AsyncWriteExt;
 
-use crate::{errno::{ERROR, IO_ERROR, TYPE_ERR}, servers::{DynHttpSocket, TcpServer, detect_prot}, DynStream};
+use crate::{DynStream, errno::{ERROR, IO_ERROR, TYPE_ERR}, ffi::utils::{heap_ptr, heap_void_ptr}, servers::{DynHttpSocket, TcpServer, detect_prot}};
 
 
+#[repr(C)]
+#[derive(Debug)]
 pub struct FfiBundle{
-    pub sock: DynStream,
-    pub addr: SocketAddr,
+    pub sock: *mut DynStream,
+    pub addr: *const SocketAddr,
 }
 
 
@@ -131,10 +133,7 @@ pub extern "C" fn tcp_server_new(fut: *mut FfiFuture, string: *mut i8){
 
         RT.get().unwrap().spawn(async move {
             match TcpServer::new(addr).await{
-                Ok(server) => {
-                    let ptr = Box::into_raw(Box::new(server));
-                    fut.complete(ptr as *mut c_void)
-                },
+                Ok(server) => fut.complete(heap_void_ptr(server)),
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
         });
@@ -154,13 +153,16 @@ pub extern "C" fn tcp_server_accept(fut: *mut FfiFuture, server: *mut TcpServer)
                     // let boxed = Box::new(http);
                     // let ptr = Box::into_raw(boxed);
                     let sock = sock.into();
+                    let sock = heap_ptr(sock);
+
+                    let addr = heap_ptr(addr);
 
                     let ffi = FfiBundle {
                         sock,
                         addr,
                     };
 
-                    fut.complete(Box::into_raw(Box::new(ffi)) as *mut c_void)
+                    fut.complete(heap_void_ptr(ffi))
                 },
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
@@ -192,66 +194,46 @@ pub extern "C" fn tcp_server_accept(fut: *mut FfiFuture, server: *mut TcpServer)
 }*/
 
 #[unsafe(no_mangle)]
-pub extern "C" fn addr_is_ipv4(ffi: *mut FfiBundle) -> bool{
+pub extern "C" fn addr_is_ipv4(addr: *const SocketAddr) -> bool{
     unsafe{
-        (*ffi).addr.is_ipv4()
+        (*addr).is_ipv4()
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn addr_is_ipv6(ffi: *mut FfiBundle) -> bool{
+pub extern "C" fn addr_is_ipv6(addr: *const SocketAddr) -> bool{
     unsafe{
-        (*ffi).addr.is_ipv6()
+        (*addr).is_ipv6()
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn get_addr_str(ffi: *mut FfiBundle) -> FfiSlice{
+pub extern "C" fn get_addr_str(addr: *const SocketAddr) -> FfiSlice{
     unsafe{
-        FfiSlice::from_string((*ffi).addr.to_string())
+        FfiSlice::from_string((*addr).to_string())
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tcp_detect_prot(fut: *mut FfiFuture, ffi: *mut FfiBundle){
+pub extern "C" fn tcp_detect_prot(fut: *mut FfiFuture, ffi: *mut DynStream){
     unsafe {
         let ffi = &mut *ffi;
         let fut = &*fut;
 
         RT.get().unwrap().spawn(async move {
-            match &mut ffi.sock{
+            match ffi {
                 DynStream::Tcp(tcp) => fut.complete(detect_prot(tcp).await as *mut c_void),
                 _ => fut.cancel_with_err(TYPE_ERR, "socket not tcp".into()),
             }
         });
     }
 }
-#[unsafe(no_mangle)]
-pub extern "C" fn tcp_peek(fut: *mut FfiFuture, ffi: *mut FfiBundle, buf: *mut FfiSlice){
-    unsafe {
-        let ffi = &mut *ffi;
-        let fut = &*fut;
-        let buf = (*buf).as_bytes_mut();
-
-        RT.get().unwrap().spawn(async move {
-            if let DynStream::Tcp(tcp) = &ffi.sock {
-                match tcp.peek(buf).await {
-                    Ok(_) => fut.complete(ptr::null_mut()),
-                    Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
-                }
-            }
-            else{
-                fut.cancel_with_err(TYPE_ERR, "socket not tcp".into())
-            }
-        });
-    }
-}
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http1_new(ffi: *mut FfiBundle, bufsize: usize) -> *mut DynHttpSocket{
+pub extern "C" fn http1_new(ffi: *mut DynStream, bufsize: usize) -> *mut DynHttpSocket{
     unsafe{
-        let ffi = Box::from_raw(ffi);
-        let http = Http1Socket::new(ffi.sock.to_stream(), bufsize);
+        let ffi = *Box::from_raw(ffi);
+        let http = Http1Socket::new(ffi, bufsize);
         let dhtt = DynHttpSocket::Http1(http);
-        Box::into_raw(Box::new(dhtt))
+        heap_ptr(dhtt)
     }
 }
 
@@ -385,7 +367,7 @@ pub extern "C" fn http_flush(fut: *mut FfiFuture, http: *mut DynHttpSocket){
 #[unsafe(no_mangle)]
 pub extern "C" fn http_get_fficlient(http: *mut DynHttpSocket) -> *mut FfiClient {
     unsafe{
-        Box::into_raw(Box::new(FfiClient::from(&(*http).get_client())))
+        heap_ptr(FfiClient::from(&(*http).get_client()))
     }
 }
 #[unsafe(no_mangle)]
@@ -500,7 +482,7 @@ pub extern "C" fn http1_websocket(fut: *mut FfiFuture, http: *mut DynHttpSocket)
             match *http {
                 DynHttpSocket::Http1(one) => {
                     match one.websocket().await {
-                        Ok(ws) => fut.complete(Box::into_raw(Box::new(ws)) as *mut c_void),
+                        Ok(ws) => fut.complete(heap_void_ptr(ws)),
                         Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                     }
                 }

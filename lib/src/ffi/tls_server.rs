@@ -1,10 +1,10 @@
-use std::{ffi::{CStr, c_void}, ptr, sync::Arc};
+use std::{ffi::CStr, ptr, sync::Arc};
 
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use rustls::{ServerConfig, pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject}, sign::CertifiedKey};
 use tokio_rustls::TlsAcceptor;
 
-use crate::{DynStream, PROVIDER, errno::{ERROR, TYPE_ERR}, ffi::server::FfiBundle, servers::TlsCertSelector};
+use crate::{DynStream, PROVIDER, errno::{ERROR, TYPE_ERR}, ffi::utils::heap_void_ptr, servers::TlsCertSelector};
 
 
 
@@ -95,9 +95,9 @@ pub extern "C" fn tls_config_free(conf: *const ServerConfig) {
 
 
 #[unsafe(no_mangle)]
-pub extern "C" fn tcp_upgrade_tls(fut: *mut FfiFuture, ffi: *mut FfiBundle, conf: *const ServerConfig){
+pub extern "C" fn tcp_upgrade_tls(fut: *mut FfiFuture, ffi: *mut DynStream, conf: *const ServerConfig){
     unsafe {
-        let ffi = Box::from_raw(ffi);
+        let ffi = *Box::from_raw(ffi);
         let fut = &*fut;
         let con = {
             Arc::increment_strong_count(conf);
@@ -106,12 +106,11 @@ pub extern "C" fn tcp_upgrade_tls(fut: *mut FfiFuture, ffi: *mut FfiBundle, conf
         let acc = TlsAcceptor::from(con);
 
         RT.get().unwrap().spawn(async move {
-            if let DynStream::Tcp(tcp) = ffi.sock {
+            if let DynStream::Tcp(tcp) = ffi {
                 match acc.accept(tcp).await {
                     Ok(tls) => {
                         let stream: DynStream = tls.into();
-                        let stream = Box::new(stream);
-                        fut.complete(Box::into_raw(stream) as *mut c_void);
+                        fut.complete(heap_void_ptr(stream));
                     },
                     Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                 }

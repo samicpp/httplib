@@ -1,8 +1,8 @@
-use std::sync::{Arc, LazyLock};
+use std::{pin::Pin, sync::{Arc, LazyLock}};
 
 use http::shared::Stream;
 use rustls::crypto::CryptoProvider;
-use tokio::net::TcpStream;
+use tokio::{io::{AsyncRead, AsyncWrite, DuplexStream}, net::TcpStream};
 use tokio_rustls::TlsStream;
 
 pub mod tests;
@@ -15,15 +15,18 @@ pub mod clients;
 
 pub static PROVIDER: LazyLock<Arc<CryptoProvider>> = LazyLock::new(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
 
+#[derive(Debug)]
 pub enum DynStream {
     Tcp(TcpStream),
     TcpTls(TlsStream<TcpStream>),
+    Duplex(DuplexStream),
 }
 impl DynStream{
     pub fn to_stream(self) -> Box<dyn Stream>{
         match self{
             Self::Tcp(tcp) => Box::new(tcp),
             Self::TcpTls(tls) => Box::new(tls),
+            Self::Duplex(dup) => Box::new(dup),
         }
     }
 
@@ -33,6 +36,10 @@ impl DynStream{
     }
     pub fn is_tls(&self) -> bool {
         if let Self::TcpTls(_) = self { true }
+        else { false }
+    }
+    pub fn is_duplex(&self) -> bool {
+        if let Self::Duplex(_) = self { true }
         else { false }
     }
 }
@@ -56,4 +63,76 @@ impl From<tokio_rustls::server::TlsStream<TcpStream>> for DynStream{
         Self::TcpTls(TlsStream::Server(value))
     }
 }
-
+impl From<DuplexStream> for DynStream{
+    fn from(value: DuplexStream) -> Self {
+        Self::Duplex(value)
+    }
+}
+impl AsyncRead for DynStream {
+    fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+        unsafe {
+            match self.get_unchecked_mut() {
+                Self::Tcp(tcp) => Pin::new_unchecked(tcp).poll_read(cx, buf),
+                Self::TcpTls(tls) => Pin::new_unchecked(tls).poll_read(cx, buf),
+                Self::Duplex(dup) => Pin::new_unchecked(dup).poll_read(cx, buf),
+            }
+        }
+    }
+}
+impl AsyncWrite for DynStream {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+        unsafe {
+            match self.get_unchecked_mut() {
+                Self::Tcp(tcp) => Pin::new_unchecked(tcp).poll_flush(cx),
+                Self::TcpTls(tls) => Pin::new_unchecked(tls).poll_flush(cx),
+                Self::Duplex(dup) => Pin::new_unchecked(dup).poll_flush(cx),
+            }
+        }
+    }
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+        unsafe {
+            match self.get_unchecked_mut() {
+                Self::Tcp(tcp) => Pin::new_unchecked(tcp).poll_shutdown(cx),
+                Self::TcpTls(tls) => Pin::new_unchecked(tls).poll_shutdown(cx),
+                Self::Duplex(dup) => Pin::new_unchecked(dup).poll_shutdown(cx),
+            }
+        }
+    }
+    fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+        unsafe {
+            match self.get_unchecked_mut() {
+                Self::Tcp(tcp) => Pin::new_unchecked(tcp).poll_write(cx, buf),
+                Self::TcpTls(tls) => Pin::new_unchecked(tls).poll_write(cx, buf),
+                Self::Duplex(dup) => Pin::new_unchecked(dup).poll_write(cx, buf),
+            }
+        }
+    }
+    fn poll_write_vectored(
+            self: Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            bufs: &[std::io::IoSlice<'_>],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+        unsafe {
+            match self.get_unchecked_mut() {
+                Self::Tcp(tcp) => Pin::new_unchecked(tcp).poll_write_vectored(cx, bufs),
+                Self::TcpTls(tls) => Pin::new_unchecked(tls).poll_write_vectored(cx, bufs),
+                Self::Duplex(dup) => Pin::new_unchecked(dup).poll_write_vectored(cx, bufs),
+            }
+        }
+    }
+    fn is_write_vectored(&self) -> bool {
+        match self {
+            Self::Tcp(tcp) => tcp.is_write_vectored(),
+            Self::TcpTls(tls) => tls.is_write_vectored(),
+            Self::Duplex(dup) => dup.is_write_vectored(),
+        }
+    }
+}

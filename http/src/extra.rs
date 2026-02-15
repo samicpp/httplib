@@ -126,9 +126,19 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
             Self::Http1(h) => h.set_method(method),
         }
     }
+    fn set_scheme(&mut self, scheme: String) {
+        match self {
+            Self::Http1(h) => h.set_scheme(scheme),
+        }
+    }
     fn set_path(&mut self, method: String){
         match self {
             Self::Http1(h) => h.set_path(method),
+        }
+    }
+    fn set_host(&mut self, host: String) {
+        match self {
+            Self::Http1(h) => h.set_host(host),
         }
     }
 

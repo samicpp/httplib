@@ -39,13 +39,18 @@ typedef struct {
     FfiSlice scheme;
 } HttpClient;
 
+typedef struct {
+    void* stream;
+    void* addr;
+}* FfiBundle;
+
 
 typedef void* FfiFuture;
-typedef void* FfiBundle;
 typedef void* FfiServer;
 typedef void* FfiSocket;
 typedef void* FfiReques;
 typedef void* FfiStream;
+typedef void* SockAddre;
 
 bool init_rt();
 bool has_init();
@@ -70,12 +75,12 @@ void tcp_server_new(FfiFuture fut, char* addr_cstr); // resolves in FfiServer
 void tcp_server_accept(FfiFuture fut, FfiServer server); // resolves in FfiBundle
 // void server_loop(FfiFuture fut, FfiServer server, void (*cb)(FfiBundle));
 
-bool addr_is_ipv4(FfiBundle bundle);
-bool addr_is_ipv6(FfiBundle bundle);
-FfiSlice get_addr_str(FfiBundle bundle);  // manual free
+bool addr_is_ipv4(SockAddre bundle);
+bool addr_is_ipv6(SockAddre bundle);
+FfiSlice get_addr_str(SockAddre bundle);  // manual free
 
-void tcp_detect_prot(FfiFuture fut, FfiBundle bundle);
-FfiSocket http1_new(FfiBundle bundle, size_t bufsize);
+void tcp_detect_prot(FfiFuture fut, FfiStream bundle);
+FfiSocket http1_new(FfiStream bundle, size_t bufsize);
 
 uint8_t http_get_type(FfiSocket http);
 
