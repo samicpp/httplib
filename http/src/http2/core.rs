@@ -109,7 +109,7 @@ impl Http2Frame{
         })
     }
 
-    pub fn create(ftype: Http2FrameType, flags: u8, stream_id: u32, priority: Option<&[u8]>, payload: Option<&[u8]>, padding: Option<&[u8]>) -> Vec<u8> {
+    pub fn create(ftype: impl Into<u8>, flags: u8, stream_id: u32, priority: Option<&[u8]>, payload: Option<&[u8]>, padding: Option<&[u8]>) -> Vec<u8> {
         let mut priority = priority.filter(|s| s.len() == 5);
         let mut payload = payload.filter(|s| s.len() < 16777216);
         let mut padding = padding.filter(|s| s.len() < 256);
@@ -264,8 +264,19 @@ impl Http2Settings {
             max_header_list_size: None,
         }
     }
+    pub fn maximum() -> Self {
+        Self {
+            // unsigned, to be safe
+            header_table_size: Some(2147483647),
+            enable_push: None,
+            max_concurrent_streams: Some(2147483647),
+            initial_window_size: Some(2147483647),
+            max_frame_size: Some(16777215),
+            max_header_list_size: None,
+        }
+    }
 
-    pub fn from_raw(buf: &[u8]) -> Option<Vec<(u16, u32)>> {
+    pub fn raw_from(buf: &[u8]) -> Option<Vec<(u16, u32)>> {
         if buf.len() % 6 != 0 { return None }
         
         let mut total = Vec::with_capacity(buf.len() / 6);
@@ -281,7 +292,7 @@ impl Http2Settings {
     }
     pub fn from(buf: &[u8]) -> Self {
         let mut sett = Self::empty();
-        let rset = Self::from_raw(buf);
+        let rset = Self::raw_from(buf);
 
         if let Some(rset) = rset {
             for (id, val) in rset {

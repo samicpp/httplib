@@ -144,10 +144,20 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
     }
     pub async fn next(&self) -> LibResult<Option<u32>> {
         let frame = self.read_frame().await?;
+
+        // println!("\x1b[36m{:?}\x1b[0m {:?}", frame.ftype, frame.source);
+        
         self.handle(frame).await
     }
     pub async fn handle(&self, frame: Http2Frame) -> LibResult<Option<u32>> {
         // strict check wether frame fields are valid, e.g. allowed flags
+
+        {
+            let mut msid = self.max_stream_id.lock().unwrap();
+            if frame.stream_id > *msid {
+                *msid = frame.stream_id
+            }
+        }
 
         match frame.ftype {
             Http2FrameType::Data => {                
@@ -227,16 +237,22 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                 }
             },
             Http2FrameType::Settings => {
-                // strict only allow known settings (1 - 6)
-                let sett = Http2Settings::from(frame.get_payload());
-                let mut settings = self.settings.lock().unwrap();
-                
-                if let Some(val) = sett.header_table_size { settings.header_table_size = Some(val) }
-                if let Some(val) = sett.enable_push { settings.enable_push = Some(val) }
-                if let Some(val) = sett.max_concurrent_streams { settings.max_concurrent_streams = Some(val) }
-                if let Some(val) = sett.initial_window_size { settings.initial_window_size = Some(val) }
-                if let Some(val) = sett.max_frame_size { settings.max_frame_size = Some(val) }
-                if let Some(val) = sett.max_header_list_size { settings.max_header_list_size = Some(val) }
+                // strict only allow known settings (1 - 6) and stream_id == 0
+                if !frame.is_ack() {
+                    {
+                        let sett = Http2Settings::from(frame.get_payload());
+                        let mut settings = self.settings.lock().unwrap();
+                        
+                        if let Some(val) = sett.header_table_size { settings.header_table_size = Some(val) }
+                        if let Some(val) = sett.enable_push { settings.enable_push = Some(val) }
+                        if let Some(val) = sett.max_concurrent_streams { settings.max_concurrent_streams = Some(val) }
+                        if let Some(val) = sett.initial_window_size { settings.initial_window_size = Some(val) }
+                        if let Some(val) = sett.max_frame_size { settings.max_frame_size = Some(val) }
+                        if let Some(val) = sett.max_header_list_size { settings.max_header_list_size = Some(val) }
+                    }
+
+                    self.write_frame(Http2FrameType::Settings, 1, 0, None, None, None).await?;
+                }
 
                 Ok(None)
             },
@@ -254,7 +270,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
                     else if let Some(mut shard) = self.streams.get_mut(&frame.stream_id) {
                         let mut stream = Http2Data::empty(promised, *self.settings.lock().unwrap());
 
-                        stream.promise.extend_from_slice(frame.get_payload());
+                        stream.promise.extend_from_slice(&pay[4..]);
 
                         if frame.is_end_headers() {
                             stream.push_headers.append(&mut decoder.decode_all(&stream.promise).ok_or(HpackError::InvalidHeaderField)?);

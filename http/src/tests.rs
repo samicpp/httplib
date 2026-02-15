@@ -1,6 +1,8 @@
-#[cfg(test)]
+#![cfg(test)]
 
-use crate::{http1::{client::Http1Request, server::Http1Socket}, websocket::core::WebSocketFrame, http2::{hpack::{Biterator, decoder::Decoder, HeaderType, encoder::Encoder}, core::{Http2Frame, Http2FrameType}}};
+use std::sync::atomic::Ordering;
+
+use crate::{http1::{client::Http1Request, server::Http1Socket}, http2::{core::{Http2Frame, Http2FrameType, Http2Settings}, hpack::{Biterator, HeaderType, decoder::Decoder, encoder::Encoder}, session::Http2Session}, websocket::core::WebSocketFrame};
 
 #[test]
 fn two_is_two(){
@@ -244,4 +246,93 @@ fn http2_frame() {
 
     assert_eq!(frame_buff.as_slice(), &frame_raw);
 
+}
+
+#[tokio::test]
+async fn http2() {
+    let (client, server) = tokio::io::duplex(64 * 1024);
+
+    let client = Http2Session::new_client(client);
+    let server = Http2Session::new_server(server);
+
+
+    client.send_preface().await.unwrap();
+    assert_eq!(server.read_preface().await.unwrap(), true);
+
+    client.send_settings(Http2Settings::default()).await.unwrap();
+    server.send_settings(Http2Settings::default()).await.unwrap();
+    
+    let frame = client.read_frame().await.unwrap();
+    assert_eq!(frame.ftype, Http2FrameType::Settings);
+    client.handle(frame).await.unwrap();
+
+    let frame = server.read_frame().await.unwrap();
+    assert_eq!(frame.ftype, Http2FrameType::Settings);
+    server.handle(frame).await.unwrap();
+
+    client.next().await.unwrap();
+    server.next().await.unwrap();
+
+    let stream_id = client.open_stream();
+    assert_eq!(stream_id, 1);
+    client.send_headers(stream_id, false, &[
+        (b":method", b"POST"),
+        (b":path", b"/index.html"),
+        (b":scheme", b"https"),
+        (b":authority", b"localhost"),
+        (b"accept", b"*/*"),
+        (b"content-type", b"text/plain"),
+        (b"content-length", b"12"),
+    ]).await.unwrap();
+    client.send_data(stream_id, true, b"hello, world").await.unwrap();
+
+    let opened = server.next().await.unwrap().unwrap(); 
+    assert_eq!(server.next().await.unwrap(), None);
+    assert_eq!(opened, 1);
+
+    client.next().await.unwrap(); // window update
+    client.next().await.unwrap(); // window update
+    
+    server.send_headers(opened, false, &[
+        (b":status", b"200"),
+        (b"content-type", b"text/plain"),
+        (b"content-length", b"12"),
+    ]).await.unwrap();
+    server.send_data(opened, true, b"hello world.").await.unwrap();
+    
+    client.next().await.unwrap();
+    client.next().await.unwrap();
+    server.next().await.unwrap(); // window update
+    server.next().await.unwrap(); // window update
+    
+    let promise = server.open_stream();
+    assert_eq!(promise, 2);
+    server.send_push_promise(opened, promise, &[
+        (b":method", b"POST"),
+        (b":path", b"/login.php"),
+        (b":scheme", b"https"),
+        (b":authority", b"localhost"),
+    ]).await.unwrap();
+    server.send_headers(promise, false, &[
+        (b":status", b"200"),
+        (b"content-type", b"text/json"),
+        (b"content-length", b"17"),
+    ]).await.unwrap();
+    server.send_data(promise, true, b"\"some rust thing\"").await.unwrap();
+
+    let promised = client.next().await.unwrap().unwrap();
+    assert_eq!(promised, 2);
+    client.next().await.unwrap();
+    client.next().await.unwrap();
+
+    server.next().await.unwrap(); // window update
+    server.next().await.unwrap(); // window update
+
+
+    client.send_goaway(0, 0, b"shutdown").await.unwrap();
+    server.next().await.unwrap();
+    assert_eq!(server.goaway.load(Ordering::SeqCst), true);
+
+    drop(server);
+    drop(client);
 }
