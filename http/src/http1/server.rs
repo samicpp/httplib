@@ -7,6 +7,8 @@ use base64::engine::general_purpose::STANDARD as b64std;
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use crate::http1::get_chunk;
+use crate::http2::core::Http2Settings;
+use crate::http2::session::Http2Session;
 use crate::shared::{HttpMethod, LibError, LibResult};
 use crate::shared::{HttpType, HttpVersion, ReadStream, Stream, WriteStream, HttpClient, HttpSocket};
 use crate::websocket::socket::{MAGIC, WebSocket};
@@ -261,7 +263,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
 
         self.code = 101;
         self.status = "Switching Protocols".to_owned();
-        self.set_header("Connection", "upgrade");
+        self.set_header("Connection", "Upgrade");
         self.set_header("Upgrade", "websocket");
         self.set_header("Sec-WebSocket-Accept", &reskey);
         self.close(b"").await?;
@@ -274,6 +276,53 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             |k| Ok(k[0].as_bytes().to_vec())
         )?;
         self.websocket_with_key(key).await
+    }
+
+    pub fn http2_direct(self, settings: Http2Settings) -> Http2Session<BufReader<R>, W> {
+        Http2Session::with(self.netr, self.netw, crate::http2::session::Mode::Server, true, settings)
+    }
+    pub async fn http2_prior_knowledge(mut self) -> LibResult<Http2Session<BufReader<R>, W>> {
+        let mut fin = [0; 6];
+        if self.client.method == HttpMethod::Unknown(Some("PRI".to_owned())) && self.client.path == "*" && self.client.version == HttpVersion::Unknown(Some("HTTP/2.0".to_owned())) && self.client.headers.len() == 0 {
+            self.netr.read_exact(&mut fin).await?;
+
+            if &fin == b"SM\r\n\r\n" {
+                Ok(self.http2_direct(Http2Settings::default_no_push()))
+            }
+            else {
+                Err(LibError::InvalidUpgrade)
+            }
+        }
+        else {
+            Err(LibError::InvalidUpgrade)
+        }
+    }
+    pub async fn h2c(mut self, settings: Option<Http2Settings>) -> LibResult<Http2Session<BufReader<R>, W>> {
+        self.code = 101;
+        self.status = "Switching Protocols".to_owned();
+        
+        if let Some(settings) = settings {
+            self.set_header("Connection", "Upgrade, HTTP2-Settings");
+            self.set_header("Upgrade", "h2c");
+            self.set_header("HTTP2-Settings", &b64std.encode(settings.to_vec()));
+        }
+        else {
+            self.set_header("Upgrade", "h2c");
+            self.set_header("Connection", "Upgrade");
+        }
+        
+        self.close(b"").await?;
+
+        let settings = 
+        if let Some(settings) = self.client.headers.get("http2-settings"){
+            let buff = b64std.decode(&settings[0]).unwrap_or(vec![]);
+            Http2Settings::from(&buff)
+        }
+        else {
+            Http2Settings::default_no_push()
+        };
+
+        Ok(self.http2_direct(settings))
     }
 }
 

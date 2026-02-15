@@ -254,6 +254,16 @@ impl Http2Settings {
             max_header_list_size: None,
         }
     }
+    fn default() -> Self {
+        Self {
+            header_table_size: Some(4096),
+            enable_push: Some(1),
+            max_concurrent_streams: None,
+            initial_window_size: Some(65535),
+            max_frame_size: Some(65535),
+            max_header_list_size: None,
+        }
+    }
     pub fn default_no_push() -> Self {
         Self {
             header_table_size: Some(4096),
@@ -323,13 +333,6 @@ impl Http2Settings {
 }
 impl Default for Http2Settings {
     fn default() -> Self {
-        Self {
-            header_table_size: Some(4096),
-            enable_push: Some(1),
-            max_concurrent_streams: None,
-            initial_window_size: Some(65535),
-            max_frame_size: Some(65535),
-            max_header_list_size: None,
-        }
+        Self::default()
     }
 }

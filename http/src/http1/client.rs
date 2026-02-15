@@ -3,7 +3,7 @@ use std::{collections::HashMap, pin::Pin};
 use rand::Rng;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 
-use crate::{http1::get_chunk, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType, HttpVersion, LibError, LibResult, ReadStream, Stream, WriteStream}, websocket::socket::{MAGIC, WebSocket}};
+use crate::{http1::get_chunk, http2::{PREFACE, core::Http2Settings, session::Http2Session}, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType, HttpVersion, LibError, LibResult, ReadStream, Stream, WriteStream}, websocket::socket::{MAGIC, WebSocket}};
 
 use base64::{Engine, engine::general_purpose::STANDARD as b64std};
 
@@ -284,6 +284,56 @@ impl<R: ReadStream, W: WriteStream> Http1Request<R, W>{
         }
         else {
             Err(LibError::InvalidUpgrade)
+        }
+    }
+
+    pub fn http2_direct(self, settings: Http2Settings) -> Http2Session<BufReader<R>, W> {
+        Http2Session::with(self.netr, self.netw, crate::http2::session::Mode::Client, true, settings)
+    }
+    pub async fn http2_prior_knowledge(mut self) -> LibResult<Http2Session<BufReader<R>, W>> {
+        if self.sent { return Err(LibError::ConnectionClosed); }
+        if self.sent_head { return Err(LibError::HeadersSent); }
+        
+        self.netw.write_all(PREFACE).await?;
+        Ok(self.http2_direct(Http2Settings::default_no_push()))
+    }
+    pub async fn h2c_upgrade(&mut self, settings: Option<Http2Settings>, body: &[u8]) -> LibResult<()> {
+        // connection can still be answered normally
+
+        if self.sent { return Err(LibError::ConnectionClosed); }
+        if self.sent_head { return Err(LibError::HeadersSent); }
+
+        if let Some(settings) = settings {
+            self.set_header("Connection", "Upgrade, HTTP2-Settings");
+            self.set_header("Upgrade", "h2c");
+            self.set_header("HTTP2-Settings", &b64std.encode(settings.to_vec()));
+        }
+        else {
+            self.set_header("Upgrade", "h2c");
+            self.set_header("Connection", "Upgrade");
+        }
+        
+        self.send(body).await
+    }
+    pub async fn h2c_full(mut self, settings: Option<Http2Settings>) -> LibResult<Http2Session<BufReader<R>, W>> {
+        self.h2c_upgrade(settings, b"").await?;
+
+        let res = self.read_until_head_complete().await?;
+        
+        if res.code == 101 {
+            let settings = 
+            if let Some(settings) = res.headers.get("http2-settings"){
+                let buff = b64std.decode(&settings[0]).unwrap_or(vec![]);
+                Http2Settings::from(&buff)
+            }
+            else {
+                Http2Settings::default_no_push()
+            };
+
+            Ok(self.http2_direct(settings))
+        }
+        else {
+            Err(LibError::NotAccepted)
         }
     }
 }
