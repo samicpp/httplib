@@ -467,7 +467,7 @@ pub extern "C" fn http1_direct_write(fut: *mut FfiFuture, http: *mut DynHttpSock
                         Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                     }
                 }
-                // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+                _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
             }
         });
     }
@@ -486,7 +486,7 @@ pub extern "C" fn http1_websocket(fut: *mut FfiFuture, http: *mut DynHttpSocket)
                         Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                     }
                 }
-                // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+                _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
             }
         });
     }

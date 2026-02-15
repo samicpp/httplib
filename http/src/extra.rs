@@ -1,27 +1,31 @@
 use std::pin::Pin;
 
-use crate::{http1::{client::Http1Request, server::Http1Socket}, shared::{HttpClient, HttpMethod, HttpRequest, HttpResponse, HttpSocket, HttpType, LibError, ReadStream, WriteStream}};
+use crate::{http1::{client::Http1Request, server::Http1Socket}, http2::{client::Http2Request, server::Http2Socket}, shared::{HttpClient, HttpMethod, HttpRequest, HttpResponse, HttpSocket, HttpType, LibError, ReadStream, WriteStream}};
 
 pub enum PolyHttpSocket<R: ReadStream, W: WriteStream>{
-    Http1(Http1Socket<R, W>)
+    Http1(Http1Socket<R, W>),
+    Http2(Http2Socket<R, W>),
 }
 
 impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
     fn get_type(&self) -> HttpType {
         match self {
             Self::Http1(_) => HttpType::Http1,
+            Self::Http2(_) => HttpType::Http2,
         }
     }
 
     fn get_client(&self) -> &HttpClient {
         match self{
             Self::Http1(h) => &h.client,
+            Self::Http2(h) => &h.client,
         }
     }
     fn read_client(&'_ mut self) -> Pin<Box<dyn Future<Output = Result<&'_ HttpClient, LibError>> + Send + '_>> {
         Box::pin(async move {
             match self{
                 Self::Http1(h) => h.read_client().await,
+                Self::Http2(h) => h.read_client().await,
             }
         })
     }
@@ -29,6 +33,7 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
         Box::pin(async move {
             match self{
                 Self::Http1(h) => h.read_until_complete().await,
+                Self::Http2(h) => h.read_until_complete().await,
             }
         })
     }
@@ -36,6 +41,7 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
         Box::pin(async move {
             match self{
                 Self::Http1(h) => h.read_until_head_complete().await,
+                Self::Http2(h) => h.read_until_head_complete().await,
             }
         })
     }
@@ -43,16 +49,19 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
     fn add_header(&mut self, header: &str, value: &str) { 
         match self {
             Self::Http1(h) => h.add_header(header, value),
+            Self::Http2(h) => h.add_header(header, value),
         }
     }
     fn set_header(&mut self, header: &str, value: &str){ 
         match self {
             Self::Http1(h) => h.set_header(header, value),
+            Self::Http2(h) => h.set_header(header, value),
         } 
     }
     fn del_header(&mut self, header: &str) -> Option<Vec<String>>{ 
         match self {
             Self::Http1(h) => h.del_header(header),
+            Self::Http2(h) => h.del_header(header),
         }
     }
 
@@ -62,12 +71,14 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
                 h.code = code;
                 h.status = message;
             },
+            Self::Http2(h) => h.status = code,
         }
     }
     fn write<'a>(&'a mut self, body: &'a [u8] ) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
         Box::pin(async move {
             match self{
                 Self::Http1(h) => h.write(body).await,
+                Self::Http2(h) => h.write(body).await,
             }
         })
     }
@@ -75,6 +86,7 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
         Box::pin(async move {
             match self{
                 Self::Http1(h) => h.close(body).await,
+                Self::Http2(h) => h.close(body).await,
             }
         })
     }
@@ -82,6 +94,7 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
         Box::pin(async move{
             match self{
                 Self::Http1(h) => h.flush().await,
+                Self::Http2(h) => h.flush().await,
             }
         })
     }
@@ -95,50 +108,59 @@ impl<R: ReadStream, W: WriteStream> From<Http1Socket<R, W>> for PolyHttpSocket<R
 
 
 pub enum PolyHttpRequest<R: ReadStream, W: WriteStream>{
-    Http1(Http1Request<R, W>)
+    Http1(Http1Request<R, W>),
+    Http2(Http2Request<R, W>),
 }
 
 impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
     fn get_type(&self) -> HttpType {
         match self {
             Self::Http1(_) => HttpType::Http1,
+            Self::Http2(_) => HttpType::Http2,
         }
     }
 
     fn add_header(&mut self, header: &str, value: &str) { 
         match self {
             Self::Http1(h) => h.add_header(header, value),
+            Self::Http2(h) => h.add_header(header, value),
         }
     }
     fn set_header(&mut self, header: &str, value: &str){ 
         match self {
             Self::Http1(h) => h.set_header(header, value),
+            Self::Http2(h) => h.set_header(header, value),
         } 
     }
     fn del_header(&mut self, header: &str) -> Option<Vec<String>>{ 
         match self {
             Self::Http1(h) => h.del_header(header),
+            Self::Http2(h) => h.del_header(header),
         }
     }
     
     fn set_method(&mut self, method: HttpMethod){
         match self {
             Self::Http1(h) => h.set_method(method),
+            Self::Http2(h) => h.set_method(method),
         }
     }
     fn set_scheme(&mut self, scheme: String) {
         match self {
             Self::Http1(h) => h.set_scheme(scheme),
+            Self::Http2(h) => h.set_scheme(scheme),
         }
     }
     fn set_path(&mut self, method: String){
         match self {
             Self::Http1(h) => h.set_path(method),
+            Self::Http2(h) => h.set_path(method),
         }
     }
     fn set_host(&mut self, host: String) {
         match self {
             Self::Http1(h) => h.set_host(host),
+            Self::Http2(h) => h.set_host(host),
         }
     }
 
@@ -146,6 +168,7 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
         Box::pin(async move{
             match self {
                 Self::Http1(h) => h.write(body).await,
+                Self::Http2(h) => h.write(body).await,
             }
         })
     }
@@ -153,6 +176,7 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
         Box::pin(async move{
             match self {
                 Self::Http1(h) => h.send(body).await,
+                Self::Http2(h) => h.send(body).await,
             }
         })
     }
@@ -160,6 +184,7 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
         Box::pin(async move{
             match self {
                 Self::Http1(h) => h.flush().await,
+                Self::Http2(h) => h.flush().await,
             }
         })
     }
@@ -167,12 +192,14 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
     fn get_response<'_a>(&'_a self) -> &'_a HttpResponse {
         match self {
             Self::Http1(h) => h.get_response(),
+            Self::Http2(h) => h.get_response(),
         }
     }
     fn read_response<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, LibError>> + Send + '_a>> {
         Box::pin(async move{
             match self {
                 Self::Http1(h) => h.read_response().await,
+                Self::Http2(h) => h.read_response().await,
             }
         })
     }
@@ -180,6 +207,7 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
         Box::pin(async move{
             match self {
                 Self::Http1(h) => h.read_until_complete().await,
+                Self::Http2(h) => h.read_until_complete().await,
             }
         })
     }
@@ -187,6 +215,7 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
         Box::pin(async move{
             match self {
                 Self::Http1(h) => h.read_until_head_complete().await,
+                Self::Http2(h) => h.read_until_head_complete().await,
             }
         })
     }

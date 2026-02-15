@@ -277,9 +277,9 @@ async fn http2() {
     assert_eq!(stream_id, 1);
     client.send_headers(stream_id, false, &[
         (b":method", b"POST"),
-        (b":path", b"/index.html"),
         (b":scheme", b"https"),
         (b":authority", b"localhost"),
+        (b":path", b"/index.html"),
         (b"accept", b"*/*"),
         (b"content-type", b"text/plain"),
         (b"content-length", b"12"),
@@ -309,9 +309,9 @@ async fn http2() {
     assert_eq!(promise, 2);
     server.send_push_promise(opened, promise, &[
         (b":method", b"POST"),
-        (b":path", b"/login.php"),
         (b":scheme", b"https"),
         (b":authority", b"localhost"),
+        (b":path", b"/login.php"),
     ]).await.unwrap();
     server.send_headers(promise, false, &[
         (b":status", b"200"),

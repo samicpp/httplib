@@ -1,0 +1,203 @@
+use std::{collections::HashMap, pin::Pin, sync::Arc};
+
+use crate::{http2::session::Http2Session, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType, LibError, LibResult, ReadStream, WriteStream}};
+
+
+#[derive(Debug)]
+pub struct Http2Request<R: ReadStream, W: WriteStream> {
+    pub stream_id: u32,
+    pub session: Arc<Http2Session<R, W>>,
+    
+    pub path: String,
+    pub method: HttpMethod,
+    pub authority: String,
+    pub scheme: String,
+    
+    pub headers: HashMap<String, Vec<String>>,
+    
+    pub sent_head: bool,
+    pub sent: bool,
+    
+    pub response: HttpResponse,
+    pub is_reset: bool,
+}
+impl<R: ReadStream, W: WriteStream> Http2Request<R, W> {
+    pub fn new(stream_id: u32, session: Arc<Http2Session<R, W>>) -> Self {
+        Self {
+            stream_id, session,
+            path: "/".to_owned(),
+            method: HttpMethod::Get,
+            authority: String::new(),
+            scheme: String::new(),
+            headers: HashMap::new(),
+            sent_head: false,
+            sent: false,
+            response: HttpResponse::default(),
+            is_reset: false,
+        }
+    }
+
+    pub fn add_header(&mut self, header: &str, value: &str) {
+        if let Some(hs) = self.headers.get_mut(header) { hs.push(value.to_owned()); }
+        else { self.headers.insert(header.to_owned(), vec![ value.to_owned() ]); }
+    }
+    pub fn set_header(&mut self, header: &str, value: &str){
+        self.headers.insert(header.to_owned(), vec![ value.to_owned() ]);
+    }
+    pub fn del_header(&mut self, header: &str) -> Option<Vec<String>>{
+        self.headers.remove(header)
+    }
+
+    pub async fn send_head(&mut self, end: bool) -> LibResult<()> {
+        if !self.sent_head {
+            self.sent_head = true;
+            let mut headers = Vec::new();
+
+            headers.push((
+                b":method".to_vec(), 
+                match &self.method { HttpMethod::Unknown(Some(s)) => s.as_bytes().to_vec(), v => v.to_string().into_bytes()},
+            ));
+            headers.push((b":scheme".to_vec(), self.scheme.as_bytes().to_vec()));
+            headers.push((b":authority".to_vec(), self.authority.as_bytes().to_vec()));
+            headers.push((b":path".to_vec(), self.path.as_bytes().to_vec()));
+
+            for (header, values) in self.headers.drain(){
+                for value in values {
+                    headers.push((header.clone().into_bytes(), value.into_bytes()));
+                }
+            }
+
+            let head = headers.iter().map(|(h, v)| (h.as_slice(), v.as_slice())).collect::<Vec<(&[u8], &[u8])>>();
+            self.session.send_headers(self.stream_id, end, &head).await?;
+            Ok(())
+        }
+        else {
+            Err(LibError::HeadersSent)
+        }
+    }
+    pub async fn write(&mut self, buf: &[u8]) -> LibResult<()> {
+        if !self.sent_head {
+            self.send_head(false).await?;
+        }
+        self.session.send_data(self.stream_id, false, buf).await
+    }
+    pub async fn send(&mut self, buf: &[u8]) -> LibResult<()> {
+        if !self.sent_head {
+            self.set_header("content-length", &buf.len().to_string());
+            self.send_head(false).await?;
+        }
+        self.session.send_data(self.stream_id, true, buf).await
+    }
+
+    pub async fn read_response(&mut self) -> LibResult<&HttpResponse> {
+        let mut shard = self.session.streams.get_mut(&self.stream_id).unwrap();
+
+        if shard.reset {
+            self.is_reset = true;
+        }
+        else if !self.response.head_complete {
+            if shard.end_head {
+                self.response.head_complete = true;
+    
+                let mut headers = Vec::with_capacity(shard.headers.len());
+                headers.append(&mut shard.headers);
+                drop(shard);
+    
+                for (h, v) in headers {
+                    let header = String::from_utf8(h).map_err(|_| LibError::InvalidString)?;
+                    let value = String::from_utf8(v).map_err(|_| LibError::InvalidString)?;
+
+                    if header == ":status" {
+                        self.response.code = value.parse().unwrap_or(0);
+                    }
+
+                    else if let Some(values) = self.response.headers.get_mut(&header) {
+                        values.push(value)
+                    }
+                    else {
+                        self.response.headers.insert(header, vec![value]);
+                    }
+                }
+            }
+            else {
+                let notif = shard.head_complete.clone();
+                drop(shard);
+                notif.notified().await;
+            }
+        }
+        else if !self.response.body_complete {
+            if shard.end_body {
+                self.response.body.append(&mut shard.body);
+                self.response.body_complete = true;
+            }
+            else {
+                let notif = shard.body_received.clone();
+                drop(shard);
+                notif.notified().await;
+            }
+        }
+
+        Ok(&self.response)
+    }
+    pub async fn read_until_complete(&mut self) -> LibResult<&HttpResponse> {
+        while !self.response.body_complete || !self.is_reset {
+            self.read_response().await?;
+        }
+        Ok(&self.response)
+    }
+    pub async fn read_until_head_complete(&mut self) -> LibResult<&HttpResponse> {
+        while !self.response.head_complete || !self.is_reset {
+            self.read_response().await?;
+        }
+        Ok(&self.response)
+    }
+}
+impl<R: ReadStream, W: WriteStream> HttpRequest for Http2Request<R, W> {
+    fn get_type(&self) -> HttpType {
+        HttpType::Http2
+    }
+
+    fn add_header(&mut self, header: &str, value: &str) { self.add_header(&header.to_lowercase(), value) }
+    fn set_header(&mut self, header: &str, value: &str) { self.set_header(&header.to_lowercase(), value) }
+    fn del_header(&mut self, header: &str) -> Option<Vec<String>> { self.del_header(&header.to_lowercase()) }
+    
+    fn set_method(&mut self, method: HttpMethod) { self.method = method }
+    fn set_scheme(&mut self, scheme: String) { self.scheme = scheme }
+    fn set_path(&mut self, path: String) { self.path = path }
+    fn set_host(&mut self, host: String) { self.authority = host }
+
+    fn write<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.write(body).await
+        })
+    }
+    fn send<'a>(&'a mut self, body: &'a [u8]) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.send(body).await
+        })
+    }
+    fn flush<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), LibError>> + Send + 'a>> {
+        Box::pin(async move {
+            Ok(())
+        })
+    }
+
+    fn get_response<'_a>(&'_a self) -> &'_a HttpResponse {
+        &self.response
+    }
+    fn read_response<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, LibError>> + Send + '_a>> {
+        Box::pin(async move {
+            self.read_response().await
+        })
+    }
+    fn read_until_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, LibError>> + Send + '_a>> {
+        Box::pin(async move {
+            self.read_until_complete().await
+        })
+    }
+    fn read_until_head_complete<'_a>(&'_a mut self) -> Pin<Box<dyn Future<Output = Result<&'_a HttpResponse, LibError>> + Send + '_a>> {
+        Box::pin(async move {
+            self.read_until_head_complete().await
+        })
+    }
+}

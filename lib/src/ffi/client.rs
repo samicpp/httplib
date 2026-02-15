@@ -3,7 +3,7 @@ use std::{ffi::{CStr, c_void}, ptr};
 use http::{http1::client::Http1Request, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType}};
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 
-use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn, tls_upgrade, tls_upgrade_no_verification}, errno::{ERROR, IO_ERROR}, ffi::{const_enums::methods, server::FfiHeaderPair}};
+use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn, tls_upgrade, tls_upgrade_no_verification}, errno::{ERROR, IO_ERROR, TYPE_ERR}, ffi::{const_enums::methods, server::FfiHeaderPair}};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -379,7 +379,7 @@ pub extern "C" fn http1_websocket_strict(fut: *mut FfiFuture, http: *mut DynHttp
                         Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                     }
                 }
-                // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+                _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
             }
         });
     }
@@ -398,7 +398,7 @@ pub extern "C" fn http1_websocket_lazy(fut: *mut FfiFuture, http: *mut DynHttpRe
                         Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                     }
                 }
-                // _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+                _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
             }
         });
     }

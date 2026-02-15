@@ -302,6 +302,7 @@ pub enum LibError {
     InvalidFrame,
     InvalidUpgrade,
     InvalidStream,
+    InvalidString,
 
     NotAccepted,
     ResetStream,
@@ -322,6 +323,7 @@ impl LibError {
     pub fn is_invalid_frame(&self) -> bool { if let Self::InvalidFrame = self { true } else { false } }
     pub fn is_invalid_upgrade(&self) -> bool { if let Self::InvalidUpgrade = self { true } else { false } }
     pub fn is_invalid_stream(&self) -> bool { if let Self::InvalidStream = self { true } else { false } }
+    pub fn is_invalid_string(&self) -> bool { if let Self::InvalidString = self { true } else { false } }
     
     pub fn is_not_accepted(&self) -> bool { if let Self::NotAccepted = self { true } else { false } }
     pub fn is_reset_stream(&self) -> bool { if let Self::ResetStream = self { true } else { false } }
@@ -359,6 +361,7 @@ impl Display for LibError {
             Self::InvalidFrame => writeln!(f, "Invalid frame"),
             Self::InvalidUpgrade => writeln!(f, "Invalid upgrade"),
             Self::InvalidStream => writeln!(f, "Invalid stream"),
+            Self::InvalidString => writeln!(f, "Invalid string"),
 
             Self::NotAccepted => writeln!(f, "Not accepted"),
             Self::ResetStream => writeln!(f, "stream reset"),
