@@ -95,13 +95,13 @@ impl<R: ReadStream, W: WriteStream> Http2Socket<R, W> {
         Ok(&self.client)
     }
     pub async fn read_until_complete(&mut self) -> LibResult<&HttpClient> {
-        while !self.client.body_complete || !self.is_reset {
+        while !self.client.body_complete && !self.is_reset {
             self.read_client().await?;
         }
         Ok(&self.client)
     }
     pub async fn read_until_head_complete(&mut self) -> LibResult<&HttpClient> {
-        while !self.client.head_complete || !self.is_reset {
+        while !self.client.head_complete && !self.is_reset {
             self.read_client().await?;
         }
         Ok(&self.client)

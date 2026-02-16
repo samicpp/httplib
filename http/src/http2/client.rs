@@ -145,13 +145,13 @@ impl<R: ReadStream, W: WriteStream> Http2Request<R, W> {
         Ok(&self.response)
     }
     pub async fn read_until_complete(&mut self) -> LibResult<&HttpResponse> {
-        while !self.response.body_complete || !self.is_reset {
+        while !self.response.body_complete && !self.is_reset {
             self.read_response().await?;
         }
         Ok(&self.response)
     }
     pub async fn read_until_head_complete(&mut self) -> LibResult<&HttpResponse> {
-        while !self.response.head_complete || !self.is_reset {
+        while !self.response.head_complete && !self.is_reset {
             self.read_response().await?;
         }
         Ok(&self.response)
