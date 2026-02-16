@@ -8,7 +8,7 @@ use sha1::{Digest, Sha1};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use crate::http1::get_chunk;
 use crate::http2::core::Http2Settings;
-use crate::http2::session::Http2Session;
+use crate::http2::session::{Http2Data, Http2Session};
 use crate::shared::{HttpMethod, LibError, LibResult};
 use crate::shared::{HttpType, HttpVersion, ReadStream, Stream, WriteStream, HttpClient, HttpSocket};
 use crate::websocket::socket::{MAGIC, WebSocket};
@@ -298,6 +298,8 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
         }
     }
     pub async fn h2c(mut self, settings: Option<Http2Settings>) -> LibResult<Http2Session<BufReader<R>, W>> {
+        self.read_until_complete().await?;
+
         self.code = 101;
         self.status = "Switching Protocols".to_owned();
         
@@ -322,7 +324,23 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             Http2Settings::default_no_push()
         };
 
-        Ok(self.http2_direct(settings))
+        let client = self.client;
+        let h2 = Http2Session::with(self.netr, self.netw, crate::http2::session::Mode::Server, true, settings);
+        let mut curr = Http2Data::empty(1, settings);
+
+        curr.end_head = true;
+        curr.end_body = true;
+        curr.body = client.body;
+        
+        for (header, vs) in client.headers {
+            for value in vs {
+                curr.headers.push((header.as_bytes().to_vec(), value.into_bytes()))
+            }
+        }
+
+        h2.streams.insert(1, curr);
+
+        Ok(h2)
     }
 }
 

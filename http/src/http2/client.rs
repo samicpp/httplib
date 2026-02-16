@@ -22,18 +22,23 @@ pub struct Http2Request<R: ReadStream, W: WriteStream> {
     pub is_reset: bool,
 }
 impl<R: ReadStream, W: WriteStream> Http2Request<R, W> {
-    pub fn new(stream_id: u32, session: Arc<Http2Session<R, W>>) -> Self {
-        Self {
-            stream_id, session,
-            path: "/".to_owned(),
-            method: HttpMethod::Get,
-            authority: String::new(),
-            scheme: String::new(),
-            headers: HashMap::new(),
-            sent_head: false,
-            sent: false,
-            response: HttpResponse::default(),
-            is_reset: false,
+    pub fn new(stream_id: u32, session: Arc<Http2Session<R, W>>) -> LibResult<Self> {
+        if session.streams.contains_key(&stream_id) {
+            Ok(Self {
+                stream_id, session,
+                path: "/".to_owned(),
+                method: HttpMethod::Get,
+                authority: String::new(),
+                scheme: String::new(),
+                headers: HashMap::new(),
+                sent_head: false,
+                sent: false,
+                response: HttpResponse::default(),
+                is_reset: false,
+            })
+        }
+        else {
+            Err(LibError::InvalidStream)
         }
     }
 

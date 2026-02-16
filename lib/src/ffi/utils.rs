@@ -13,6 +13,9 @@ pub fn heap_ptr<T>(thing: T) -> *mut T{
 pub fn heap_void_ptr<T>(thing: T) -> *mut c_void {
     Box::into_raw(Box::new(thing)) as *mut c_void
 }
+pub fn heap_const_ptr<T>(thing: T) -> *const T{
+    Box::into_raw(Box::new(thing))
+}
 
 
 #[repr(C)]

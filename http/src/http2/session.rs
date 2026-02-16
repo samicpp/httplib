@@ -386,7 +386,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         }
     }
 
-    pub fn open_stream(&self) -> u32 {
+    pub fn open_stream(&self) -> Option<u32> {
         let mut max_id = self.max_stream_id.lock().unwrap();
         let stream_id = 
         if self.mode.is_ambiguous() { 
@@ -401,8 +401,13 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
             else { *max_id + 1 }
         }
         ;
-        *max_id = stream_id;
-        stream_id
+        if self.settings.lock().unwrap().max_concurrent_streams.map(|v| stream_id > v).unwrap_or(true) {
+            *max_id = stream_id;
+            Some(stream_id)
+        }
+        else {
+            None
+        }
     }
 
 
@@ -588,20 +593,20 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         self.write_frame(Http2FrameType::Settings, 0, 0, None, Some(&settings.to_vec()), None).await
     }
     
-    pub async fn send_push_promise(&self, ascociate_id: u32, promise_id: u32, headers: &[(&[u8], &[u8])]) -> LibResult<()> {
+    pub async fn send_push_promise(&self, associate_id: u32, promise_id: u32, headers: &[(&[u8], &[u8])]) -> LibResult<()> {
         {
             let mut stream =
             if self.mode.is_client() {
                 return Err(LibError::ProtocolError)
             }
-            else if self.streams.contains_key(&promise_id) || !self.streams.contains_key(&ascociate_id) {
+            else if self.streams.contains_key(&promise_id) || !self.streams.contains_key(&associate_id) {
                 return Err(LibError::InvalidStream)
             }
             else {
                 Http2Data::empty(promise_id, *self.settings.lock().unwrap())
             };
 
-            stream.ascociated = Some(ascociate_id);
+            stream.ascociated = Some(associate_id);
 
             self.streams.insert(promise_id, stream);
         }
@@ -627,14 +632,14 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
             pay.extend_from_slice(&u32::to_be_bytes(promise_id));
             pay.extend_from_slice(&enc);
 
-            buff.append(&mut Http2Frame::create(Http2FrameType::PushPromise, 4, ascociate_id, None, Some(&pay), None));
+            buff.append(&mut Http2Frame::create(Http2FrameType::PushPromise, 4, associate_id, None, Some(&pay), None));
         }
         else {
             let mut pay = Vec::with_capacity(mfs);
             pay.extend_from_slice(&u32::to_be_bytes(promise_id));
             pay.extend_from_slice(&enc[pos..pos + mfs - 4]);
 
-            buff.append(&mut Http2Frame::create(Http2FrameType::PushPromise, 0, ascociate_id, None, Some(&pay), None));
+            buff.append(&mut Http2Frame::create(Http2FrameType::PushPromise, 0, associate_id, None, Some(&pay), None));
             pos += mfs - 4;
 
             let mut chunks = enc.len() / mfs;
@@ -645,11 +650,11 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
             }
 
             for _ in 0..chunks {
-                buff.append(&mut Http2Frame::create(Http2FrameType::Continuation, 0, ascociate_id, None, Some(&enc[pos..pos + mfs]), None));
+                buff.append(&mut Http2Frame::create(Http2FrameType::Continuation, 0, associate_id, None, Some(&enc[pos..pos + mfs]), None));
                 pos += mfs;
             }
 
-            buff.append(&mut Http2Frame::create(Http2FrameType::Continuation, 4, ascociate_id, None, Some(&enc[pos..]), None));
+            buff.append(&mut Http2Frame::create(Http2FrameType::Continuation, 4, associate_id, None, Some(&enc[pos..]), None));
         }
 
         self.netw.lock().await.write_all(&buff).await?;

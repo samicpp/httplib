@@ -1,15 +1,15 @@
 use std::{io, sync::Arc};
-use http::{extra::PolyHttpRequest, shared::Stream};
+use http::extra::PolyHttpRequest;
 use rustls::{SignatureScheme, client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier}};
 use tokio_rustls::{TlsConnector, rustls::ClientConfig};
 use tokio::{io::{ReadHalf, WriteHalf}, net::{TcpStream, ToSocketAddrs}};
 
-use crate::PROVIDER;
+use crate::{DynStream, PROVIDER};
 
 
 // use crate::DynStream;
 
-pub type DynHttpRequest = PolyHttpRequest<ReadHalf<Box<dyn Stream>>, WriteHalf<Box<dyn Stream>>>;
+pub type DynHttpRequest = PolyHttpRequest<ReadHalf<DynStream>, WriteHalf<DynStream>>;
 
 pub async fn tcp_connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
     // not alot going on

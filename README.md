@@ -12,7 +12,7 @@ I will make FFI bindings to a bunch of languages/frameworks for this library
 - [x] HTTP/1.1
 - [x] WebSocket
 - [x] HPACK
-- [ ] HTTP/2
+- [x] HTTP/2
 - [ ] QPACK 
 - [ ] HTTP/3 (first using quinn, later my own)
 - [ ] QUIC (replaces quinn)
@@ -21,13 +21,13 @@ I will make FFI bindings to a bunch of languages/frameworks for this library
 - [x] HTTP/1.1
 - [x] WebSocket
 - [x] HPACK
-- [ ] HTTP/2
+- [x] HTTP/2
 - [ ] QPACK 
 - [ ] HTTP/3 (first using quinn, later my own)
 - [ ] QUIC (replaces quinn)
 
 ### Features
-- [ ] server support TLS
+- [x] server support TLS
 - [x] client support TLS
 - [x] FFI compatible
 - [ ] custom error enums

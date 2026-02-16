@@ -1,10 +1,12 @@
 use std::pin::Pin;
 
+use tokio::io::BufReader;
+
 use crate::{http1::{client::Http1Request, server::Http1Socket}, http2::{client::Http2Request, server::Http2Socket}, shared::{HttpClient, HttpMethod, HttpRequest, HttpResponse, HttpSocket, HttpType, LibError, ReadStream, WriteStream}};
 
 pub enum PolyHttpSocket<R: ReadStream, W: WriteStream>{
     Http1(Http1Socket<R, W>),
-    Http2(Http2Socket<R, W>),
+    Http2(Http2Socket<BufReader<R>, W>),
 }
 
 impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
@@ -109,7 +111,7 @@ impl<R: ReadStream, W: WriteStream> From<Http1Socket<R, W>> for PolyHttpSocket<R
 
 pub enum PolyHttpRequest<R: ReadStream, W: WriteStream>{
     Http1(Http1Request<R, W>),
-    Http2(Http2Request<R, W>),
+    Http2(Http2Request<BufReader<R>, W>),
 }
 
 impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{

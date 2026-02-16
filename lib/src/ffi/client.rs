@@ -1,9 +1,9 @@
-use std::{ffi::{CStr, c_void}, ptr};
+use std::{ffi::CStr, ptr};
 
 use http::{http1::client::Http1Request, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType}};
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 
-use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn, tls_upgrade, tls_upgrade_no_verification}, errno::{ERROR, IO_ERROR, TYPE_ERR}, ffi::{const_enums::methods, server::FfiHeaderPair}};
+use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn, tls_upgrade, tls_upgrade_no_verification}, errno::{ERROR, IO_ERROR, TYPE_ERR}, ffi::{const_enums::methods, server::FfiHeaderPair, utils::{heap_ptr, heap_void_ptr}}};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -90,7 +90,7 @@ pub extern "C" fn tcp_connect(fut: *mut FfiFuture, addr: *mut i8){
 
         RT.get().unwrap().spawn(async move{
             match ntcpconn(addr).await {
-                Ok(tcp) => fut.complete(Box::into_raw(Box::new(DynStream::from(tcp))) as *mut c_void),
+                Ok(tcp) => fut.complete(heap_void_ptr(DynStream::from(tcp))),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
         });
@@ -109,7 +109,7 @@ pub extern "C" fn tcp_tls_connect(fut: *mut FfiFuture, addr: *mut i8, domain: *m
         RT.get().unwrap().spawn(async move{
             match ntcpconn(addr).await {
                 Ok(tcp) => match tls_upgrade(tcp, domain, alpns).await {
-                    Ok(tls) => fut.complete(Box::into_raw(Box::new(DynStream::from(tls))) as *mut c_void),
+                    Ok(tls) => fut.complete(heap_void_ptr(DynStream::from(tls))),
                     Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
                 },
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
@@ -129,7 +129,7 @@ pub extern "C" fn tcp_tls_connect_unverified(fut: *mut FfiFuture, addr: *mut i8,
         RT.get().unwrap().spawn(async move{
             match ntcpconn(addr).await {
                 Ok(tcp) => match tls_upgrade_no_verification(tcp, domain, alpns).await {
-                    Ok(tls) => fut.complete(Box::into_raw(Box::new(DynStream::from(tls))) as *mut c_void),
+                    Ok(tls) => fut.complete(heap_void_ptr(DynStream::from(tls))),
                     Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
                 },
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
@@ -141,9 +141,9 @@ pub extern "C" fn tcp_tls_connect_unverified(fut: *mut FfiFuture, addr: *mut i8,
 #[unsafe(no_mangle)]
 pub extern "C" fn http1_request_new(stream: *mut DynStream, bufsize: usize) -> *mut DynHttpRequest{
     unsafe{
-        let stream = Box::from_raw(stream);
-        let dreq = Http1Request::new(stream.to_stream(), bufsize).into();
-        Box::into_raw(Box::new(dreq))
+        let stream = *Box::from_raw(stream);
+        let dreq = Http1Request::new(stream, bufsize).into();
+        heap_ptr(dreq)
     }
 }
 
@@ -349,7 +349,7 @@ pub extern "C" fn http_response_get_body(req: *mut DynHttpRequest) -> FfiSlice {
 #[unsafe(no_mangle)]
 pub extern "C" fn http_req_get_ffires(req: *mut DynHttpRequest) -> *const FfiResponse {
     unsafe {
-        Box::into_raw(Box::new(FfiResponse::from(&(*req).get_response())))
+        heap_ptr(FfiResponse::from(&(*req).get_response()))
     }
 }
 #[unsafe(no_mangle)]
@@ -375,7 +375,7 @@ pub extern "C" fn http1_websocket_strict(fut: *mut FfiFuture, http: *mut DynHttp
             match *http {
                 DynHttpRequest::Http1(one) => {
                     match one.websocket_strict().await {
-                        Ok(ws) => fut.complete(Box::into_raw(Box::new(ws)) as *mut c_void),
+                        Ok(ws) => fut.complete(heap_void_ptr(ws)),
                         Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                     }
                 }
@@ -394,7 +394,7 @@ pub extern "C" fn http1_websocket_lazy(fut: *mut FfiFuture, http: *mut DynHttpRe
             match *http {
                 DynHttpRequest::Http1(one) => {
                     match one.websocket_lazy().await {
-                        Ok(ws) => fut.complete(Box::into_raw(Box::new(ws)) as *mut c_void),
+                        Ok(ws) => fut.complete(heap_void_ptr(ws)),
                         Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                     }
                 }

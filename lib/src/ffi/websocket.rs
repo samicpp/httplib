@@ -1,11 +1,11 @@
-use std::{ffi::c_void, ptr};
+use std::ptr;
 
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use tokio::io::{BufReader, ReadHalf, WriteHalf};
 
 use http::{shared::Stream, websocket::{core::WebSocketFrame, socket::WebSocket}};
 
-use crate::errno::IO_ERROR;
+use crate::{errno::IO_ERROR, ffi::utils::heap_void_ptr};
 
 
 pub type DynWebSocket = WebSocket<BufReader<ReadHalf<Box<dyn Stream>>>, WriteHalf<Box<dyn Stream>>>;
@@ -40,7 +40,7 @@ pub extern "C" fn websocket_read_frame(fut: *mut FfiFuture, ws: *mut DynWebSocke
 
         RT.get().unwrap().spawn(async move{
             match ws.read_frame().await{
-                Ok(frame) => fut.complete(Box::into_raw(Box::new(FfiWsFrame::from_owned(frame))) as *mut c_void),
+                Ok(frame) => fut.complete(heap_void_ptr(FfiWsFrame::from_owned(frame))),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
         });

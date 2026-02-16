@@ -273,7 +273,7 @@ async fn http2() {
     client.next().await.unwrap();
     server.next().await.unwrap();
 
-    let stream_id = client.open_stream();
+    let stream_id = client.open_stream().unwrap();
     assert_eq!(stream_id, 1);
     client.send_headers(stream_id, false, &[
         (b":method", b"POST"),
@@ -305,7 +305,7 @@ async fn http2() {
     server.next().await.unwrap(); // window update
     server.next().await.unwrap(); // window update
     
-    let promise = server.open_stream();
+    let promise = server.open_stream().unwrap();
     assert_eq!(promise, 2);
     server.send_push_promise(opened, promise, &[
         (b":method", b"POST"),
