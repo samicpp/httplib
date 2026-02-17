@@ -64,6 +64,12 @@ pub extern "C" fn http2_with(stream: *mut DynStream, bufsize: usize, mode: u8, s
         h2
     }
 }
+#[unsafe(no_mangle)]
+pub extern "C" fn http2_free(session: *const DynH2Sess) {
+    unsafe {
+        drop(Arc::from_raw(session));
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn http2_read_preface(fut: *const FfiFuture, session: *const DynH2Sess) {
@@ -201,13 +207,13 @@ pub extern "C" fn http2_send_priority(fut: *const FfiFuture, session: *const Dyn
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn http2_send_rst_stream(fut: *const FfiFuture, session: *const DynH2Sess, stream_id: u32, dependency: u32, weight: u8) {
+pub extern "C" fn http2_send_rst_stream(fut: *const FfiFuture, session: *const DynH2Sess, stream_id: u32, code: u32) {
     unsafe {
         let sess = &*session;
         let fut = &*fut;
 
         RT.get().unwrap().spawn(async move{
-            match sess.send_priority(stream_id, dependency, weight).await {
+            match sess.send_rst_stream(stream_id, code).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
                 Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
             }
@@ -349,7 +355,7 @@ pub extern "C" fn http2_client_handler(session: *const DynH2Sess, stream_id: u32
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn http2_server_handler(session: *const DynH2Sess, stream_id: u32) -> *const DynHttpSocket {
+pub extern "C" fn http2_server_handler(session: *const DynH2Sess, stream_id: u32) -> *mut DynHttpSocket {
     unsafe {
         let session = {
             Arc::increment_strong_count(session);

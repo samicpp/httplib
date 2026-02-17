@@ -87,7 +87,6 @@ pub extern "C" fn stream_write(fut: *mut FfiFuture, stream: *mut DynStream, buf:
         });
     }
 }
-
 #[unsafe(no_mangle)]
 pub extern "C" fn stream_write_all(fut: *mut FfiFuture, stream: *mut DynStream, buf: *mut FfiSlice){
     unsafe {
@@ -101,6 +100,13 @@ pub extern "C" fn stream_write_all(fut: *mut FfiFuture, stream: *mut DynStream, 
                 Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
             }
         });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn stream_free(stream: *mut DynStream){
+    unsafe {
+        drop(Box::from_raw(stream))
     }
 }
 

@@ -384,7 +384,6 @@ pub extern "C" fn http1_websocket_strict(fut: *mut FfiFuture, http: *mut DynHttp
         });
     }
 }
-
 #[unsafe(no_mangle)]
 pub extern "C" fn http1_websocket_lazy(fut: *mut FfiFuture, http: *mut DynHttpRequest){
     unsafe{
@@ -394,6 +393,25 @@ pub extern "C" fn http1_websocket_lazy(fut: *mut FfiFuture, http: *mut DynHttpRe
             match *http {
                 DynHttpRequest::Http1(one) => {
                     match one.websocket_lazy().await {
+                        Ok(ws) => fut.complete(heap_void_ptr(ws)),
+                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    }
+                }
+                _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+            }
+        });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http1_h2c_full(fut: *mut FfiFuture, http: *mut DynHttpRequest){
+    unsafe{
+        let http = Box::from_raw(http);
+        let fut = &*fut;
+        RT.get().unwrap().spawn(async move{
+            match *http {
+                DynHttpRequest::Http1(one) => {
+                    match one.h2c_full(None).await {
                         Ok(ws) => fut.complete(heap_void_ptr(ws)),
                         Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
                     }

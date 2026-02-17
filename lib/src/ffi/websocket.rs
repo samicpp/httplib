@@ -20,7 +20,8 @@ pub struct FfiWsFrame{
     pub payload: FfiSlice,
 }
 impl FfiWsFrame{
-    pub fn from_owned(frame: WebSocketFrame) -> Self{
+    pub fn from_owned(mut frame: WebSocketFrame) -> Self{
+        frame.unmask_in_place();
         Self { 
             fin: frame.fin, 
             rsv: frame.rsv, 

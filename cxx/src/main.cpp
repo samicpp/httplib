@@ -1,7 +1,7 @@
 #include<stdio.h>
 #include<iostream>
 #include "ffi.h"
-#include "rsffi.h"
+#include "rsffi/base.h"
 #include "wrapper.hpp"
 #include <coroutine>
 
@@ -51,7 +51,7 @@ int server_test(){
     printf("server ptr = %p\n", server);
     // if (!server) return 2;
 
-    FfiBundle bundle;
+    FfiBundle* bundle;
     {
         bool done = false;
         printf("making future\n");
@@ -65,7 +65,7 @@ int server_test(){
         while (!done) ;
         // ffi_future_await(fut);
         printf("taking result\n");
-        bundle = static_cast<FfiBundle>(ffi_future_take_result(fut));
+        bundle = static_cast<FfiBundle*>(ffi_future_take_result(fut));
     }
     printf("bundle ptr = %p\n", bundle);
     // if (!bundle) return 3;

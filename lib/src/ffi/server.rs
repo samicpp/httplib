@@ -491,3 +491,40 @@ pub extern "C" fn http1_websocket(fut: *mut FfiFuture, http: *mut DynHttpSocket)
         });
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn http1_h2c(fut: *mut FfiFuture, http: *mut DynHttpSocket){
+    unsafe{
+        let http = Box::from_raw(http);
+        let fut = &*fut;
+        RT.get().unwrap().spawn(async move{
+            match *http {
+                DynHttpSocket::Http1(one) => {
+                    match one.h2c(None).await {
+                        Ok(ws) => fut.complete(heap_void_ptr(ws)),
+                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    }
+                }
+                _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+            }
+        });
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn http1_h2_prior_knowledge(fut: *mut FfiFuture, http: *mut DynHttpSocket){
+    unsafe{
+        let http = Box::from_raw(http);
+        let fut = &*fut;
+        RT.get().unwrap().spawn(async move{
+            match *http {
+                DynHttpSocket::Http1(one) => {
+                    match one.http2_prior_knowledge().await {
+                        Ok(ws) => fut.complete(heap_void_ptr(ws)),
+                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    }
+                }
+                _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
+            }
+        });
+    }
+}
