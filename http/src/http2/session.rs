@@ -128,6 +128,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         }
     }
 
+    
 
     pub async fn send_preface(&self) -> io::Result<()> {
         self.netw.lock().await.write_all(PREFACE).await
@@ -138,10 +139,40 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         Ok(pre == PREFACE)
     }
 
+
     pub async fn read_frame(&self) -> io::Result<Http2Frame> {
         let mut reader = self.netr.lock().await;
         Http2Frame::from_reader(&mut *reader).await
     }
+    pub async fn read_until(&self, frame_type: Http2FrameType) -> io::Result<Vec<Http2Frame>> {
+        let mut frames = vec![];
+        let mut done = false;
+
+        while !done {
+            let frame = self.read_frame().await?;
+            
+            if frame.ftype == frame_type { done = true }
+
+            frames.push(frame);
+        }
+
+        Ok(frames)
+    }
+    pub async fn read_until_not(&self, frame_type: Http2FrameType) -> io::Result<Vec<Http2Frame>> {
+        let mut frames = vec![];
+        let mut done = false;
+
+        while !done {
+            let frame = self.read_frame().await?;
+            
+            if frame.ftype != frame_type { done = true }
+
+            frames.push(frame);
+        }
+        
+        Ok(frames)
+    }
+
     pub async fn next(&self) -> LibResult<Option<u32>> {
         let frame = self.read_frame().await?;
 
@@ -149,6 +180,40 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
         
         self.handle(frame).await
     }
+    pub async fn next_until(&self, frame_type: Http2FrameType) -> LibResult<Vec<u32>> {
+        let mut opened = vec![];
+        let mut done = false;
+
+        while !done {
+            let frame = self.read_frame().await?;
+            
+            if frame.ftype == frame_type { done = true }
+
+            if let Some(open) = self.handle(frame).await? {
+                opened.push(open);
+            }
+        }
+        
+        Ok(opened)
+    }
+    pub async fn next_until_not(&self, frame_type: Http2FrameType) -> LibResult<Vec<u32>> {
+        let mut opened = vec![];
+        let mut done = false;
+
+        while !done {
+            let frame = self.read_frame().await?;
+            
+            if frame.ftype != frame_type { done = true }
+
+            if let Some(open) = self.handle(frame).await? {
+                opened.push(open);
+            }
+        }
+        
+        Ok(opened)
+    }
+
+
     pub async fn handle(&self, frame: Http2Frame) -> LibResult<Option<u32>> {
         // strict check wether frame fields are valid, e.g. allowed flags
 
