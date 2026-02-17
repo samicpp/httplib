@@ -16,7 +16,21 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            channel: stable
+            target: x86_64-unknown-linux-gnu
+            test: true
+
+          - os: windows-latest
+            channel: stable
+            target: x86_64-pc-windows-msvc
+            test: true
+          
+          - os: ubuntu-latest
+            channel: stable
+            target: aarch64-unknown-linux-gnu
+            test: false
 
     steps:
     - uses: actions/checkout@v4
@@ -28,7 +42,18 @@ jobs:
     #   run: cmake --build build --config Debug
 
     # rust part
+    - name: Add target Rust
+      run: rustup target add ${{ matrix.target }}
+
     - name: Build Rust
-      run: cargo build --verbose
+      run: cargo +${{ matrix.channel }} build --verbose --release --target ${{ matrix.target }}
+
     - name: Run tests
-      run: cargo test --verbose
+      if: matrix.test == true
+      run: cargo +${{ matrix.channel }} test --verbose --release --target ${{ matrix.target }}
+    
+    - name: Upload build
+      uses: actions/upload-artifact@v3
+      with:
+        name: httplib-${{ matrix.target }}
+        path: target/${{ matrix.target }}/release/
