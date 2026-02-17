@@ -53,7 +53,7 @@ jobs:
       run: cargo +${{ matrix.channel }} test --verbose --release --target ${{ matrix.target }}
     
     - name: Upload build
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: httplib-${{ matrix.target }}
         path: target/${{ matrix.target }}/release/
