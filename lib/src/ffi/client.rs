@@ -3,7 +3,7 @@ use std::{ffi::CStr, ptr};
 use http::{http1::client::Http1Request, shared::{HttpMethod, HttpRequest, HttpResponse, HttpType}};
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 
-use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn, tls_upgrade, tls_upgrade_no_verification}, errno::{ERROR, IO_ERROR, TYPE_ERR}, ffi::{const_enums::methods, server::FfiHeaderPair, utils::{heap_ptr, heap_void_ptr}}};
+use crate::{DynStream, clients::{DynHttpRequest, tcp_connect as ntcpconn, tls_upgrade, tls_upgrade_no_verification}, errno::{Errno, TYPE_ERR}, ffi::{const_enums::methods, server::FfiHeaderPair, utils::{heap_ptr, heap_void_ptr}}};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -91,7 +91,7 @@ pub extern "C" fn tcp_connect(fut: *mut FfiFuture, addr: *mut i8){
         RT.get().unwrap().spawn(async move{
             match ntcpconn(addr).await {
                 Ok(tcp) => fut.complete(heap_void_ptr(DynStream::from(tcp))),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -110,9 +110,9 @@ pub extern "C" fn tcp_tls_connect(fut: *mut FfiFuture, addr: *mut i8, domain: *m
             match ntcpconn(addr).await {
                 Ok(tcp) => match tls_upgrade(tcp, domain, alpns).await {
                     Ok(tls) => fut.complete(heap_void_ptr(DynStream::from(tls))),
-                    Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                    Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                 },
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -130,9 +130,9 @@ pub extern "C" fn tcp_tls_connect_unverified(fut: *mut FfiFuture, addr: *mut i8,
             match ntcpconn(addr).await {
                 Ok(tcp) => match tls_upgrade_no_verification(tcp, domain, alpns).await {
                     Ok(tls) => fut.complete(heap_void_ptr(DynStream::from(tls))),
-                    Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                    Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                 },
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -224,7 +224,7 @@ pub extern "C" fn http_req_write(fut: *mut FfiFuture, req: *mut DynHttpRequest, 
         RT.get().unwrap().spawn(async move{
             match req.write(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -238,7 +238,7 @@ pub extern "C" fn http_req_send(fut: *mut FfiFuture, req: *mut DynHttpRequest, b
         RT.get().unwrap().spawn(async move{
             match req.send(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -251,7 +251,7 @@ pub extern "C" fn http_req_flush(fut: *mut FfiFuture, req: *mut DynHttpRequest){
         RT.get().unwrap().spawn(async move{
             match req.flush().await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -266,7 +266,7 @@ pub extern "C" fn http_req_read(fut: *mut FfiFuture, req: *mut DynHttpRequest){
         RT.get().unwrap().spawn(async move{
             match req.read_response().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -280,7 +280,7 @@ pub extern "C" fn http_req_read_until_complete(fut: *mut FfiFuture, req: *mut Dy
         RT.get().unwrap().spawn(async move{
             match req.read_until_complete().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -294,7 +294,7 @@ pub extern "C" fn http_req_read_until_head_complete(fut: *mut FfiFuture, req: *m
         RT.get().unwrap().spawn(async move{
             match req.read_until_head_complete().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -376,7 +376,7 @@ pub extern "C" fn http1_websocket_strict(fut: *mut FfiFuture, http: *mut DynHttp
                 DynHttpRequest::Http1(one) => {
                     match one.websocket_strict().await {
                         Ok(ws) => fut.complete(heap_void_ptr(ws)),
-                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                        Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                     }
                 }
                 _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
@@ -394,7 +394,7 @@ pub extern "C" fn http1_websocket_lazy(fut: *mut FfiFuture, http: *mut DynHttpRe
                 DynHttpRequest::Http1(one) => {
                     match one.websocket_lazy().await {
                         Ok(ws) => fut.complete(heap_void_ptr(ws)),
-                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                        Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                     }
                 }
                 _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
@@ -413,7 +413,7 @@ pub extern "C" fn http1_h2c_full(fut: *mut FfiFuture, http: *mut DynHttpRequest)
                 DynHttpRequest::Http1(one) => {
                     match one.h2c_full(None).await {
                         Ok(ws) => fut.complete(heap_void_ptr(ws)),
-                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                        Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                     }
                 }
                 _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),

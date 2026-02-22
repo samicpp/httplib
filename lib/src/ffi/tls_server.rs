@@ -4,7 +4,7 @@ use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use rustls::{ServerConfig, pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject}, sign::CertifiedKey};
 use tokio_rustls::TlsAcceptor;
 
-use crate::{DynStream, PROVIDER, errno::{ERROR, TYPE_ERR}, ffi::utils::heap_void_ptr, servers::TlsCertSelector};
+use crate::{DynStream, PROVIDER, errno::{Errno, TYPE_ERR}, ffi::utils::heap_void_ptr, servers::TlsCertSelector};
 
 
 
@@ -112,7 +112,7 @@ pub extern "C" fn tcp_upgrade_tls(fut: *mut FfiFuture, ffi: *mut DynStream, conf
                         let stream: DynStream = tls.into();
                         fut.complete(heap_void_ptr(stream));
                     },
-                    Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                 }
             }
             else{

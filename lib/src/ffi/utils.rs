@@ -4,7 +4,7 @@ use std::ptr;
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::{DynStream, errno::{ERROR, TYPE_ERR}};
+use crate::{DynStream, errno::{Errno, TYPE_ERR}};
 
 
 pub fn heap_ptr<T>(thing: T) -> *mut T{
@@ -46,7 +46,7 @@ pub extern "C" fn tcp_peek(fut: *mut FfiFuture, ffi: *mut DynStream, buf: *mut F
             if let DynStream::Tcp(tcp) = ffi {
                 match tcp.peek(buf).await {
                     Ok(size) => fut.complete(heap_void_ptr(size)),
-                    Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                    Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                 }
             }
             else{
@@ -66,7 +66,7 @@ pub extern "C" fn stream_read(fut: *mut FfiFuture, stream: *mut DynStream, buf: 
         RT.get().unwrap().spawn(async move {
             match stream.read(buf).await {
                 Ok(size) => fut.complete(heap_void_ptr(size)),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -82,7 +82,7 @@ pub extern "C" fn stream_write(fut: *mut FfiFuture, stream: *mut DynStream, buf:
         RT.get().unwrap().spawn(async move {
             match stream.write(buf).await {
                 Ok(size) => fut.complete(heap_void_ptr(size)),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -97,7 +97,7 @@ pub extern "C" fn stream_write_all(fut: *mut FfiFuture, stream: *mut DynStream, 
         RT.get().unwrap().spawn(async move {
             match stream.write_all(buf).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }

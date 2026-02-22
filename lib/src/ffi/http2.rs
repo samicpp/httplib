@@ -1,11 +1,11 @@
 use core::slice;
 use std::{ptr, sync::Arc};
 
-use http::{http2::{client::Http2Request, core::{Http2Frame, Http2Settings}, server::Http2Socket, session::{Http2Session, Mode}}, shared::LibError};
+use http::{http2::{client::Http2Request, core::{Http2Frame, Http2Settings}, server::Http2Socket, session::{Http2Session, Mode}}};
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use tokio::io::{BufReader, ReadHalf, WriteHalf};
 
-use crate::{DynStream, clients::DynHttpRequest, errno::{ERROR, IO_ERROR}, ffi::{server::FfiHeaderPair, utils::{heap_ptr, heap_void_ptr}}, servers::DynHttpSocket};
+use crate::{DynStream, clients::DynHttpRequest, errno::Errno, ffi::{server::FfiHeaderPair, utils::{heap_ptr, heap_void_ptr}}, servers::DynHttpSocket};
 
 pub type DynH2Sess = Http2Session<BufReader<ReadHalf<DynStream>>, WriteHalf<DynStream>>;
 
@@ -80,7 +80,7 @@ pub extern "C" fn http2_read_preface(fut: *const FfiFuture, session: *const DynH
         RT.get().unwrap().spawn(async move{
             match sess.read_preface().await {
                 Ok(success) => fut.complete(heap_void_ptr(success)),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -94,7 +94,7 @@ pub extern "C" fn http2_send_preface(fut: *const FfiFuture, session: *const DynH
         RT.get().unwrap().spawn(async move{
             match sess.send_preface().await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -109,8 +109,7 @@ pub extern "C" fn http2_next(fut: *const FfiFuture, session: *const DynH2Sess) {
             match sess.next().await {
                 Ok(None) => fut.complete(ptr::null_mut()),
                 Ok(Some(opened)) => fut.complete(heap_void_ptr(opened)),
-                Err(LibError::Io(io)) => fut.cancel_with_err(IO_ERROR, io.to_string().into()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -124,7 +123,7 @@ pub extern "C" fn http2_read_raw(fut: *const FfiFuture, session: *const DynH2Ses
         RT.get().unwrap().spawn(async move{
             match sess.read_frame().await {
                 Ok(frame) => fut.complete(heap_void_ptr(FfiSlice::from_vec(frame.source))),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -141,8 +140,7 @@ pub extern "C" fn http2_handle_raw(fut: *const FfiFuture, session: *const DynH2S
             match sess.handle(frame).await {
                 Ok(None) => fut.complete(ptr::null_mut()),
                 Ok(Some(opened)) => fut.complete(heap_void_ptr(opened)),
-                Err(LibError::Io(io)) => fut.cancel_with_err(IO_ERROR, io.to_string().into()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -164,8 +162,7 @@ pub extern "C" fn http2_send_data(fut: *const FfiFuture, session: *const DynH2Se
         RT.get().unwrap().spawn(async move{
             match sess.send_data(stream_id, end, buf.as_bytes()).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(LibError::Io(io)) => fut.cancel_with_err(IO_ERROR, io.to_string().into()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -184,8 +181,7 @@ pub extern "C" fn http2_send_headers(fut: *const FfiFuture, session: *const DynH
         RT.get().unwrap().spawn(async move{
             match sess.send_headers(stream_id, end, &head).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(LibError::Io(io)) => fut.cancel_with_err(IO_ERROR, io.to_string().into()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -200,7 +196,7 @@ pub extern "C" fn http2_send_priority(fut: *const FfiFuture, session: *const Dyn
         RT.get().unwrap().spawn(async move{
             match sess.send_priority(stream_id, dependency, weight).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -215,7 +211,7 @@ pub extern "C" fn http2_send_rst_stream(fut: *const FfiFuture, session: *const D
         RT.get().unwrap().spawn(async move{
             match sess.send_rst_stream(stream_id, code).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -231,7 +227,7 @@ pub extern "C" fn http2_send_settings(fut: *const FfiFuture, session: *const Dyn
         RT.get().unwrap().spawn(async move{
             match sess.send_settings(settings).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -246,7 +242,7 @@ pub extern "C" fn http2_send_settings_default(fut: *const FfiFuture, session: *c
         RT.get().unwrap().spawn(async move{
             match sess.send_settings(settings).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -261,7 +257,7 @@ pub extern "C" fn http2_send_settings_default_no_push(fut: *const FfiFuture, ses
         RT.get().unwrap().spawn(async move{
             match sess.send_settings(settings).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -276,7 +272,7 @@ pub extern "C" fn http2_send_settings_maximum(fut: *const FfiFuture, session: *c
         RT.get().unwrap().spawn(async move{
             match sess.send_settings(settings).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -296,8 +292,7 @@ pub extern "C" fn http2_send_push_promise(fut: *const FfiFuture, session: *const
         RT.get().unwrap().spawn(async move{
             match sess.send_push_promise(associate_id, promise_id, &head).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(LibError::Io(io)) => fut.cancel_with_err(IO_ERROR, io.to_string().into()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -312,7 +307,7 @@ pub extern "C" fn http2_send_ping(fut: *const FfiFuture, session: *const DynH2Se
         RT.get().unwrap().spawn(async move{
             match sess.send_ping(ack, buf.as_bytes()).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -327,7 +322,7 @@ pub extern "C" fn http2_send_goaway(fut: *const FfiFuture, session: *const DynH2
         RT.get().unwrap().spawn(async move{
             match sess.send_goaway(stream_id, code, buf.as_bytes()).await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }

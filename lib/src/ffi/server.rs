@@ -4,7 +4,7 @@ use http::{http1::server::Http1Socket, shared::{HttpClient, HttpMethod, HttpSock
 use httprs_core::ffi::{futures::FfiFuture, own::{FfiSlice, RT}};
 use tokio::io::AsyncWriteExt;
 
-use crate::{DynStream, errno::{ERROR, IO_ERROR, TYPE_ERR}, ffi::utils::{heap_ptr, heap_void_ptr}, servers::{DynHttpSocket, TcpServer, detect_prot}};
+use crate::{DynStream, errno::{Errno, TYPE_ERR}, ffi::utils::{heap_ptr, heap_void_ptr}, servers::{DynHttpSocket, TcpServer, detect_prot}};
 
 
 #[repr(C)]
@@ -134,7 +134,7 @@ pub extern "C" fn tcp_server_new(fut: *mut FfiFuture, string: *mut i8){
         RT.get().unwrap().spawn(async move {
             match TcpServer::new(addr).await{
                 Ok(server) => fut.complete(heap_void_ptr(server)),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -164,7 +164,7 @@ pub extern "C" fn tcp_server_accept(fut: *mut FfiFuture, server: *mut TcpServer)
 
                     fut.complete(heap_void_ptr(ffi))
                 },
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -181,7 +181,7 @@ pub extern "C" fn tcp_server_accept(fut: *mut FfiFuture, server: *mut TcpServer)
                 match ser.boxed.accept().await{
                     Ok((addr, sock)) => cb(Box::into_raw(Box::new(FfiBundle { sock, addr }))),
                     Err(e) => {
-                        fut.cancel_with_err(ERROR, e.to_string().into());
+                        fut.cancel_with_err(e.get_errno(), e.to_string().into());
                         break;
                     },
                 }
@@ -257,7 +257,7 @@ pub extern "C" fn http_read_client(fut: *mut FfiFuture, http: *mut DynHttpSocket
         RT.get().unwrap().spawn(async move{
             match http.read_client().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -271,7 +271,7 @@ pub extern "C" fn http_read_until_complete(fut: *mut FfiFuture, http: *mut DynHt
         RT.get().unwrap().spawn(async move{
             match http.read_until_complete().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -285,7 +285,7 @@ pub extern "C" fn http_read_until_head_complete(fut: *mut FfiFuture, http: *mut 
         RT.get().unwrap().spawn(async move{
             match http.read_until_head_complete().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -325,7 +325,7 @@ pub extern "C" fn http_write(fut: *mut FfiFuture, http: *mut DynHttpSocket, buf:
         RT.get().unwrap().spawn(async move{
             match http.write(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -344,7 +344,7 @@ pub extern "C" fn http_close(fut: *mut FfiFuture, http: *mut DynHttpSocket, buf:
                 },
                 Err(e) => {
                     // dbg!(e);
-                    fut.cancel_with_err(IO_ERROR, e.to_string().into());
+                    fut.cancel_with_err(e.get_errno(), e.to_string().into());
                 },
             }
         });
@@ -358,7 +358,7 @@ pub extern "C" fn http_flush(fut: *mut FfiFuture, http: *mut DynHttpSocket){
         RT.get().unwrap().spawn(async move{
             match http.flush().await {
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -464,7 +464,7 @@ pub extern "C" fn http1_direct_write(fut: *mut FfiFuture, http: *mut DynHttpSock
                 DynHttpSocket::Http1(one) => {
                     match one.netw.write_all(buf.as_bytes()).await {
                         Ok(_) => fut.complete(ptr::null_mut()),
-                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                        Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                     }
                 }
                 _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
@@ -483,7 +483,7 @@ pub extern "C" fn http1_websocket(fut: *mut FfiFuture, http: *mut DynHttpSocket)
                 DynHttpSocket::Http1(one) => {
                     match one.websocket().await {
                         Ok(ws) => fut.complete(heap_void_ptr(ws)),
-                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                        Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                     }
                 }
                 _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
@@ -502,7 +502,7 @@ pub extern "C" fn http1_h2c(fut: *mut FfiFuture, http: *mut DynHttpSocket){
                 DynHttpSocket::Http1(one) => {
                     match one.h2c(None).await {
                         Ok(ws) => fut.complete(heap_void_ptr(ws)),
-                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                        Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                     }
                 }
                 _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),
@@ -520,7 +520,7 @@ pub extern "C" fn http1_h2_prior_knowledge(fut: *mut FfiFuture, http: *mut DynHt
                 DynHttpSocket::Http1(one) => {
                     match one.http2_prior_knowledge().await {
                         Ok(ws) => fut.complete(heap_void_ptr(ws)),
-                        Err(e) => fut.cancel_with_err(ERROR, e.to_string().into()),
+                        Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
                     }
                 }
                 _ => fut.cancel_with_err(TYPE_ERR, "not http1".into()),

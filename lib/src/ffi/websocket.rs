@@ -5,7 +5,7 @@ use tokio::io::{BufReader, ReadHalf, WriteHalf};
 
 use http::{shared::Stream, websocket::{core::WebSocketFrame, socket::WebSocket}};
 
-use crate::{errno::IO_ERROR, ffi::utils::heap_void_ptr};
+use crate::{errno::Errno, ffi::utils::heap_void_ptr};
 
 
 pub type DynWebSocket = WebSocket<BufReader<ReadHalf<Box<dyn Stream>>>, WriteHalf<Box<dyn Stream>>>;
@@ -42,7 +42,7 @@ pub extern "C" fn websocket_read_frame(fut: *mut FfiFuture, ws: *mut DynWebSocke
         RT.get().unwrap().spawn(async move{
             match ws.read_frame().await{
                 Ok(frame) => fut.complete(heap_void_ptr(FfiWsFrame::from_owned(frame))),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -62,7 +62,7 @@ pub extern "C" fn websocket_flush(fut: *mut FfiFuture, ws: *mut DynWebSocket){
         RT.get().unwrap().spawn(async move{
             match ws.flush().await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -85,7 +85,7 @@ pub extern "C" fn websocket_send_continuation(fut: *mut FfiFuture, ws: *mut DynW
         RT.get().unwrap().spawn(async move{
             match ws.send_continuation(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -101,7 +101,7 @@ pub extern "C" fn websocket_send_continuation_masked(fut: *mut FfiFuture, ws: *m
         RT.get().unwrap().spawn(async move{
             match ws.send_continuation_masked(&mask, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -115,7 +115,7 @@ pub extern "C" fn websocket_send_continuation_frag(fut: *mut FfiFuture, ws: *mut
         RT.get().unwrap().spawn(async move{
             match ws.send_continuation_frag(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -131,7 +131,7 @@ pub extern "C" fn websocket_send_continuation_masked_frag(fut: *mut FfiFuture, w
         RT.get().unwrap().spawn(async move{
             match ws.send_continuation_masked_frag(&mask, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -146,7 +146,7 @@ pub extern "C" fn websocket_send_text(fut: *mut FfiFuture, ws: *mut DynWebSocket
         RT.get().unwrap().spawn(async move{
             match ws.send_text(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -162,7 +162,7 @@ pub extern "C" fn websocket_send_text_masked(fut: *mut FfiFuture, ws: *mut DynWe
         RT.get().unwrap().spawn(async move{
             match ws.send_text_masked(&mask, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -176,7 +176,7 @@ pub extern "C" fn websocket_send_text_frag(fut: *mut FfiFuture, ws: *mut DynWebS
         RT.get().unwrap().spawn(async move{
             match ws.send_text_frag(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -192,7 +192,7 @@ pub extern "C" fn websocket_send_text_masked_frag(fut: *mut FfiFuture, ws: *mut 
         RT.get().unwrap().spawn(async move{
             match ws.send_text_masked_frag(&mask, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -207,7 +207,7 @@ pub extern "C" fn websocket_send_binary(fut: *mut FfiFuture, ws: *mut DynWebSock
         RT.get().unwrap().spawn(async move{
             match ws.send_binary(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -223,7 +223,7 @@ pub extern "C" fn websocket_send_binary_masked(fut: *mut FfiFuture, ws: *mut Dyn
         RT.get().unwrap().spawn(async move{
             match ws.send_binary_masked(&mask, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -237,7 +237,7 @@ pub extern "C" fn websocket_send_binary_frag(fut: *mut FfiFuture, ws: *mut DynWe
         RT.get().unwrap().spawn(async move{
             match ws.send_binary_frag(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -253,7 +253,7 @@ pub extern "C" fn websocket_send_binary_masked_frag(fut: *mut FfiFuture, ws: *mu
         RT.get().unwrap().spawn(async move{
             match ws.send_binary_masked_frag(&mask, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -268,7 +268,7 @@ pub extern "C" fn websocket_send_close(fut: *mut FfiFuture, ws: *mut DynWebSocke
         RT.get().unwrap().spawn(async move{
             match ws.send_close(code, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -284,7 +284,7 @@ pub extern "C" fn websocket_send_close_masked(fut: *mut FfiFuture, ws: *mut DynW
         RT.get().unwrap().spawn(async move{
             match ws.send_close_masked(&mask, code, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -299,7 +299,7 @@ pub extern "C" fn websocket_send_ping(fut: *mut FfiFuture, ws: *mut DynWebSocket
         RT.get().unwrap().spawn(async move{
             match ws.send_ping(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -315,7 +315,7 @@ pub extern "C" fn websocket_send_ping_masked(fut: *mut FfiFuture, ws: *mut DynWe
         RT.get().unwrap().spawn(async move{
             match ws.send_ping_masked(&mask, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -329,7 +329,7 @@ pub extern "C" fn websocket_send_pong(fut: *mut FfiFuture, ws: *mut DynWebSocket
         RT.get().unwrap().spawn(async move{
             match ws.send_pong(buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
@@ -345,7 +345,7 @@ pub extern "C" fn websocket_send_pong_masked(fut: *mut FfiFuture, ws: *mut DynWe
         RT.get().unwrap().spawn(async move{
             match ws.send_pong_masked(&mask, buf.as_bytes()).await{
                 Ok(_) => fut.complete(ptr::null_mut()),
-                Err(e) => fut.cancel_with_err(IO_ERROR, e.to_string().into()),
+                Err(e) => fut.cancel_with_err(e.get_errno(), e.to_string().into()),
             }
         });
     }
