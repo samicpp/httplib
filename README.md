@@ -31,3 +31,5 @@ I will make FFI bindings to a bunch of languages/frameworks for this library
 - [x] client support TLS
 - [x] FFI compatible
 - [ ] custom error enums
+- [ ] rewrite http to use `futures` instead of `tokio`
+- [ ] allow compiling with different async runtimes
