@@ -73,6 +73,18 @@ impl HttpVersion{
             _ => self.to_string()
         }
     }
+    pub fn associated_type(&self) -> Option<HttpType> {
+        use HttpType::*;
+        match self {
+            Self::Http09 => Some(Http1),
+            Self::Http10 => Some(Http1),
+            Self::Http11 => Some(Http1),
+            Self::Http2 => Some(Http2),
+            Self::Http3 => Some(Http3),
+
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
