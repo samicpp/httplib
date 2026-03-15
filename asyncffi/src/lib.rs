@@ -113,6 +113,30 @@ impl From<tokio_rustls::server::TlsStream<DuplexStream>> for DynStream{
         Self::TlsDuplex(TlsStream::Server(value))
     }
 }
+#[cfg(feature = "unix-sockets")]
+impl From<UnixStream> for DynStream {
+    fn from(value: UnixStream) -> Self {
+        Self::Unix(value)
+    }
+}
+#[cfg(feature = "unix-sockets")]
+impl From<TlsStream<UnixStream>> for DynStream{
+    fn from(value: TlsStream<UnixStream>) -> Self {
+        Self::UnixTls(value)
+    }
+}
+#[cfg(feature = "unix-sockets")]
+impl From<tokio_rustls::client::TlsStream<UnixStream>> for DynStream{
+    fn from(value: tokio_rustls::client::TlsStream<UnixStream>) -> Self {
+        Self::UnixTls(TlsStream::Client(value))
+    }
+}
+#[cfg(feature = "unix-sockets")]
+impl From<tokio_rustls::server::TlsStream<UnixStream>> for DynStream{
+    fn from(value: tokio_rustls::server::TlsStream<UnixStream>) -> Self {
+        Self::UnixTls(TlsStream::Server(value))
+    }
+}
 impl AsyncRead for DynStream {
     fn poll_read(
             self: std::pin::Pin<&mut Self>,

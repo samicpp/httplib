@@ -65,6 +65,15 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     }
 
 
+    #[inline]
+    pub fn get_version(&self) -> &HttpVersion {
+        match &self.version_override {
+            Some(ver) => ver,
+            None => &self.client.version,
+        }
+    }
+
+
     pub async fn read_client(&mut self) -> LibResult<&HttpClient>{
         self.line_buf.clear();
 
@@ -173,7 +182,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     }
 
     pub async fn send_head(&mut self) -> LibResult<()> {
-        if !self.sent_head && self.client.version == HttpVersion::Http09 {
+        if !self.sent_head && self.get_version() == &HttpVersion::Http09 {
             self.sent_head = true;
             Ok(())
         }
@@ -181,8 +190,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             let headers = self.headers.iter().map(|(h,vs)|vs.iter().map(|v| format!("{}: {}\r\n", h, v)).collect::<String>()).collect::<String>();
             let head = format!(
                 "{} {} {}\r\n{}\r\n", 
-                if let Some(ov) = &self.version_override { ov.to_string_unknown() }
-                else { self.client.version.to_string_unknown() },
+                self.get_version().to_string_unknown(),
                 self.code,
                 &self.status,
                 headers,
@@ -199,7 +207,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
     }
 
     pub async fn write(&mut self, body: &[u8]) -> LibResult<()>{
-        if !self.closed && self.client.version == HttpVersion::Http09 {
+        if !self.closed && self.get_version() == &HttpVersion::Http09 {
             if !self.sent_head { self.send_head().await? }
             self.netw.write_all(body).await?;
             Ok(())
@@ -224,7 +232,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             self.closed = true;
             Ok(())
         }
-        else if !self.closed && self.client.version == HttpVersion::Http09 {
+        else if !self.closed && self.get_version() == &HttpVersion::Http09 {
             self.netw.write_all(body).await?;
             Ok(())
         }

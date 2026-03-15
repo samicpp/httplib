@@ -69,6 +69,7 @@ impl HttpVersion{
     pub fn to_string_unknown(&self) -> String {
         match &self { 
             HttpVersion::Unknown(Some(s)) => s.to_owned(),
+            HttpVersion::Unknown(None) => "UNKOWN/0.0".to_owned(),
             _ => self.to_string()
         }
     }
