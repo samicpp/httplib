@@ -406,24 +406,25 @@ impl Huffman {
     pub fn encode(&self, buf: &[u8]) -> Vec<u8> {
         let mut res = Vec::new();
         let mut acc = 0;
-        let mut alen = 0;
+        let mut alen: u8 = 0;
 
-        for sym in buf {
-            let code = self.code_from_symbol[*sym as usize] as u64;
-            let len = self.len_from_symbol[*sym as usize] as u64;
+        for &sym in buf {
+            let code = self.code_from_symbol[sym as usize];
+            let len = self.len_from_symbol[sym as usize];
 
-            acc = (acc << len) | code;
+            acc <<= len;
+            acc |= code;
             alen += len;
-        }
-
-        while alen >= 8 {
-            let byte = acc >> (alen - 8);
-            let byte = byte as u8;
-            res.push(byte);
-            alen -= 8;
-
-            if alen > 0 { acc &= (1 << alen) - 1; }
-            else { acc = 0; }
+            
+            while alen >= 8 {
+                let byte = acc >> (alen - 8);
+                let byte = byte as u8;
+                res.push(byte);
+                alen -= 8;
+    
+                if alen > 0 { acc &= (1 << alen) - 1; }
+                else { acc = 0; }
+            }
         }
 
         if alen > 0 {

@@ -43,19 +43,19 @@ impl<R: ReadStream, W: WriteStream> HttpSocket for PolyHttpSocket<R, W>{
     fn add_header(&mut self, header: &str, value: &str) { 
         match self {
             Self::Http1(h) => h.add_header(header, value),
-            Self::Http2(h) => h.add_header(header, value),
+            Self::Http2(h) => h.add_header(&header.to_lowercase(), value),
         }
     }
     fn set_header(&mut self, header: &str, value: &str){ 
         match self {
             Self::Http1(h) => h.set_header(header, value),
-            Self::Http2(h) => h.set_header(header, value),
+            Self::Http2(h) => h.set_header(&header.to_lowercase(), value),
         } 
     }
     fn del_header(&mut self, header: &str) -> Option<Vec<String>>{ 
         match self {
             Self::Http1(h) => h.del_header(header),
-            Self::Http2(h) => h.del_header(header),
+            Self::Http2(h) => h.del_header(&header.to_lowercase()),
         }
     }
 
@@ -111,19 +111,19 @@ impl<R: ReadStream, W: WriteStream> HttpRequest for PolyHttpRequest<R, W>{
     fn add_header(&mut self, header: &str, value: &str) { 
         match self {
             Self::Http1(h) => h.add_header(header, value),
-            Self::Http2(h) => h.add_header(header, value),
+            Self::Http2(h) => h.add_header(&header.to_lowercase(), value),
         }
     }
     fn set_header(&mut self, header: &str, value: &str){ 
         match self {
             Self::Http1(h) => h.set_header(header, value),
-            Self::Http2(h) => h.set_header(header, value),
+            Self::Http2(h) => h.set_header(&header.to_lowercase(), value),
         } 
     }
     fn del_header(&mut self, header: &str) -> Option<Vec<String>>{ 
         match self {
             Self::Http1(h) => h.del_header(header),
-            Self::Http2(h) => h.del_header(header),
+            Self::Http2(h) => h.del_header(&header.to_lowercase()),
         }
     }
     
