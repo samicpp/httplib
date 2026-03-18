@@ -88,7 +88,7 @@ impl<R: ReadStream, W: WriteStream> Http2Socket<R, W> {
             self.client.body.append(&mut shard.body);
             self.client.body_complete = shard.end_body;
             
-            if avail == 0 {
+            if !shard.end_body && avail == 0 {
                 let notif = shard.body_received.clone();
                 drop(shard);
                 notif.notified().await;
