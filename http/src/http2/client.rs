@@ -33,7 +33,7 @@ impl<R: ReadStream, W: WriteStream> Http2Request<R, W> {
                 headers: HashMap::new(),
                 sent_head: false,
                 sent: false,
-                response: HttpResponse::default(),
+                response: HttpResponse::default_h2(),
                 is_reset: false,
             })
         }

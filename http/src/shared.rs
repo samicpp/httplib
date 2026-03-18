@@ -192,6 +192,44 @@ pub struct HttpClient{
 }
 impl HttpClient{
     pub fn reset(&mut self) { *self = Default::default() }
+    pub fn default_h2() -> Self {
+        Self {
+            valid: true,
+
+            mpv_complete: false,
+            head_complete: false,
+            body_complete: false,
+
+            method: HttpMethod::Unknown(None),
+            path: String::new(),
+            version: HttpVersion::Http2,
+
+            headers: HashMap::new(),
+            body: Vec::new(),
+
+            host: None,
+            scheme: None,
+        }
+    }
+    pub fn default_h3() -> Self {
+        Self {
+            valid: true,
+
+            mpv_complete: false,
+            head_complete: false,
+            body_complete: false,
+
+            method: HttpMethod::Unknown(None),
+            path: String::new(),
+            version: HttpVersion::Http3,
+
+            headers: HashMap::new(),
+            body: Vec::new(),
+
+            host: None,
+            scheme: None,
+        }
+    }
 }
 impl Default for HttpClient{
     fn default() -> Self {
@@ -332,6 +370,38 @@ impl Default for HttpResponse{
 impl HttpResponse{
     pub fn reset(&mut self){
         *self = Default::default();
+    }
+    pub fn default_h2() -> Self {
+        Self {
+            valid: true,
+
+            vcs_complete: false,
+            head_complete: false,
+            body_complete: false,
+
+            version: HttpVersion::Http2,
+            code: 0,
+            status: String::new(),
+
+            headers: HashMap::new(),
+            body: Vec::new(),
+        }
+    }
+    pub fn default_h3() -> Self {
+        Self {
+            valid: true,
+
+            vcs_complete: false,
+            head_complete: false,
+            body_complete: false,
+
+            version: HttpVersion::Http3,
+            code: 0,
+            status: String::new(),
+
+            headers: HashMap::new(),
+            body: Vec::new(),
+        }
     }
 }
 

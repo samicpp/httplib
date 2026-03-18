@@ -22,7 +22,7 @@ impl<R: ReadStream, W: WriteStream> Http2Socket<R, W> {
         if session.streams.contains_key(&stream_id) {
             Ok(Self {
                 stream_id, session,
-                client: HttpClient::default(),
+                client: HttpClient::default_h2(),
                 is_reset: false,
                 status: 200,
                 headers: HashMap::new(),
