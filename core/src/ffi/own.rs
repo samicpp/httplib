@@ -74,6 +74,11 @@ pub extern "C" fn ffi_future_cancel(fut: *const FfiFuture) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn ffi_future_cancel_with_err(fut: *const FfiFuture, code: i32, msg: FfiSlice) {
+    unsafe { (*fut).cancel_with_err(code, msg) }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn ffi_future_complete(fut: *const FfiFuture, result: *mut c_void) {
     unsafe { (*fut).complete(result) }
 }
