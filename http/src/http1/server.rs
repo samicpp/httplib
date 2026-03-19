@@ -190,7 +190,7 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
             let headers = self.headers.iter().map(|(h,vs)|vs.iter().map(|v| format!("{}: {}\r\n", h, v)).collect::<String>()).collect::<String>();
             let head = format!(
                 "{} {} {}\r\n{}\r\n", 
-                self.get_version().to_string_unknown(),
+                self.get_version().to_string(),
                 self.code,
                 &self.status,
                 headers,
@@ -338,6 +338,12 @@ impl<R: ReadStream, W: WriteStream> Http1Socket<R, W>{
         curr.end_head = true;
         curr.end_body = true;
         curr.body = client.body;
+
+        if let Some(host) = client.host {
+            curr.headers.push((b":authority".to_vec(), host.into_bytes()));
+        }
+        if !client.method.is_unknown_none() { curr.headers.push((b":method".to_vec(), client.method.to_string().into_bytes())); }
+        curr.headers.push((b":path".to_vec(), client.path.into_bytes()));
         
         for (header, vs) in client.headers {
             for value in vs {
