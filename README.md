@@ -42,7 +42,9 @@ The bindings are in a seperate repo [samicpp/httplib-bindings](https://github.co
 - [ ] allow configuring tokio runtime
 - [ ] ~~rewrite http to use `futures` instead of `tokio`~~
 - [ ] ~~allow compiling with different async runtimes~~
-
+- [ ] add builtin content compressions (gzip, deflate, brotli, zstd)
+- [ ] change HttpSocket.set_status status type to `Cow<'static, str>`
+- [ ] change HttpSocket.set_header value type to `Cow<'static, str>`
 
 ## Examples
 
