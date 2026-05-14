@@ -38,15 +38,17 @@ The bindings are in a seperate repo [samicpp/httplib-bindings](https://github.co
 - [x] client support TLS
 - [x] FFI compatible
 - [x] custom error enums
-- [ ] rewrite http to use `futures` instead of `tokio`
-- [ ] allow compiling with different async runtimes
+- [x] allow Http2Frame to live on stack
+- [ ] allow configuring tokio runtime
+- [ ] ~~rewrite http to use `futures` instead of `tokio`~~
+- [ ] ~~allow compiling with different async runtimes~~
 
 
 ## Examples
 
 HTTP/1.1 server
 ```rust
-use http::http1::server::Http1Socket;
+use photon::http1::server::Http1Socket;
 use tokio::net::TcpListener;
 
 

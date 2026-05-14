@@ -1,5 +1,5 @@
 use core::slice;
-use std::{ptr, sync::Arc};
+use std::{borrow::Cow, ptr, sync::Arc};
 
 use http::{http2::{client::Http2Request, core::{Http2Frame, Http2Settings}, server::Http2Socket, session::{Http2Session, Mode}}};
 use httprs_core::ffi::{futures::FfiFuture, slice::{FfiSlice, ToFfiSlice}};
@@ -127,7 +127,7 @@ pub extern "C" fn http2_handle_raw(fut: *const FfiFuture, session: *const DynH2S
     unsafe {
         let sess = &*session;
         let fut = &*fut;
-        let frame = Http2Frame::from_owned(if frame.owned { frame.to_vec().unwrap() } else { frame.as_bytes().to_vec() });
+        let frame = Http2Frame::from(if frame.owned { Cow::Owned(frame.to_vec().unwrap()) } else { Cow::Borrowed(frame.as_bytes_static()) });
         let frame = if let Some(frame) = frame { frame } else { return };
 
         spawn_task_with(fut, async move{

@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{borrow::Cow, ops::Range};
 
 use tokio::io::AsyncReadExt;
 
@@ -6,8 +6,8 @@ use crate::shared::ReadStream;
 
 
 #[derive(Debug, Clone)]
-pub struct Http2Frame{
-    pub source: Vec<u8>,
+pub struct Http2Frame<'a>{
+    pub source: Cow<'a, [u8]>,
 
     pub length: u32,
     pub type_byte: u8,
@@ -21,12 +21,50 @@ pub struct Http2Frame{
 
     pub ftype: Http2FrameType,
 }
-impl Http2Frame{
-    pub fn from_owned(source: Vec<u8>) -> Option<Self> {
-        let length = u32::from_be_bytes([0, *source.get(0)?, *source.get(1)?, *source.get(2)?]);
-        let type_byte = *source.get(3)?;
-        let flags = *source.get(4)?;
-        let stream_id = u32::from_be_bytes([*source.get(5)?, *source.get(6)?, *source.get(7)?, *source.get(8)?]);
+impl<'a> Http2Frame<'a>{
+    pub fn to_owned(&self) -> Http2Frame<'static> {
+        Http2Frame {
+            source: Cow::Owned(match &self.source { Cow::Owned(v) => v.clone(), Cow::Borrowed(b) => b.to_vec() }),
+            length: self.length,
+            type_byte: self.type_byte,
+            flags: self.flags,
+            stream_id: self.stream_id,
+            pad_len: self.pad_len,
+            priority: self.priority.clone(),
+            payload: self.payload.clone(),
+            padding: self.padding.clone(),
+            ftype: self.ftype,
+        }
+    }
+    pub fn into_owned(self) -> Http2Frame<'static> {
+        Http2Frame {
+            source: Cow::Owned(match self.source { Cow::Owned(o) => o, Cow::Borrowed(b) => b.to_vec() }),
+            length: self.length,
+            type_byte: self.type_byte,
+            flags: self.flags,
+            stream_id: self.stream_id,
+            pad_len: self.pad_len,
+            priority: self.priority.clone(),
+            payload: self.payload.clone(),
+            padding: self.padding.clone(),
+            ftype: self.ftype,
+        }
+    }
+    pub fn is_owned(&self) -> bool {
+        match &self.source {
+            Cow::Owned(_) => true,
+            Cow::Borrowed(_) => false
+        }
+    }
+
+    pub fn from(source: Cow<'a, [u8]>) -> Option<Self> {
+        let buf = &*source;
+        if buf.len() < 9 { return None }
+
+        let length = u32::from_be_bytes([0, buf[0], buf[1], buf[2]]);
+        let type_byte = buf[3];
+        let flags = buf[4];
+        let stream_id = u32::from_be_bytes([buf[5], buf[6], buf[7], buf[8]]);
         let ftype = type_byte.into();
 
         let mut pad_len = 0;
@@ -34,7 +72,7 @@ impl Http2Frame{
         let mut pay_end = length as usize + 9;
 
         if flags & 0x08 != 0 {
-            pad_len = *source.get(pay_start)?;
+            pad_len = *buf.get(pay_start)?;
             pay_start += 1;
             pay_end -= pad_len as usize;
         }
@@ -61,7 +99,7 @@ impl Http2Frame{
             ftype,
         })
     }
-    pub async fn from_reader<R: ReadStream>(stream: &mut R) -> Result<Self, std::io::Error> {
+    pub async fn from_reader<R: ReadStream>(stream: &mut R) -> Result<Http2Frame<'static>, std::io::Error> {
         let mut source = vec![0; 9];
         stream.read_exact(&mut source).await?;
 
@@ -93,8 +131,8 @@ impl Http2Frame{
         let padding = pay_end..pay_end + pad_len as usize;
 
 
-        Ok(Self {
-            source,
+        Ok(Http2Frame {
+            source: Cow::Owned(source),
             length,
             type_byte,
             flags,

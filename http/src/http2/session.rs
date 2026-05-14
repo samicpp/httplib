@@ -91,7 +91,7 @@ pub struct Http2Session<R: ReadStream, W: WriteStream>{
     pub streams: DashMap<u32, Http2Data>,
 
     pub goaway: AtomicBool,
-    pub goaway_frame: SyncMutex<Option<Http2Frame>>,
+    pub goaway_frame: SyncMutex<Option<Http2Frame<'static>>>,
 
     pub window: SyncMutex<usize>,
     pub notify: Notify,
@@ -163,11 +163,11 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
     }
 
 
-    pub async fn read_frame(&self) -> io::Result<Http2Frame> {
+    pub async fn read_frame(&self) -> io::Result<Http2Frame<'static>> {
         let mut reader = self.netr.lock().await;
         Http2Frame::from_reader(&mut *reader).await
     }
-    pub async fn read_until(&self, frame_type: Http2FrameType) -> io::Result<Vec<Http2Frame>> {
+    pub async fn read_until(&self, frame_type: Http2FrameType) -> io::Result<Vec<Http2Frame<'static>>> {
         let mut frames = vec![];
         let mut done = false;
 
@@ -181,7 +181,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
 
         Ok(frames)
     }
-    pub async fn read_until_not(&self, frame_type: Http2FrameType) -> io::Result<Vec<Http2Frame>> {
+    pub async fn read_until_not(&self, frame_type: Http2FrameType) -> io::Result<Vec<Http2Frame<'static>>> {
         let mut frames = vec![];
         let mut done = false;
 
@@ -237,7 +237,7 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
     }
 
 
-    pub async fn handle(&self, frame: Http2Frame) -> LibResult<Option<u32>> {
+    pub async fn handle<'a>(&self, frame: Http2Frame<'a>) -> LibResult<Option<u32>> {
         // TODO: strict check wether frame fields are valid, e.g. allowed flags
 
         {
@@ -391,8 +391,8 @@ impl<R: ReadStream, W: WriteStream> Http2Session<R, W> {
             },
             Http2FrameType::Goaway => {
                 self.goaway.store(true, Ordering::SeqCst);
-                let mut goaway = self.goaway_frame.lock().unwrap();
-                *goaway = Some(frame);
+                let mut goaway: std::sync::MutexGuard<'_, Option<Http2Frame<'static>>> = self.goaway_frame.lock().unwrap();
+                *goaway = Some(frame.into_owned());
                 self.notify.notify_waiters();
                 Ok(None)
             },

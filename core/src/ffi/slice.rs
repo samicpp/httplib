@@ -102,6 +102,12 @@ impl FfiSlice{
     pub fn as_str_lossy(&self) -> std::borrow::Cow<'_, str>{
         String::from_utf8_lossy(self.as_bytes())
     }
+    pub unsafe fn as_bytes_static(&self) -> &'static [u8]{
+        unsafe { slice::from_raw_parts(self.ptr, self.len) }
+    }
+    pub unsafe fn as_bytes_mut_static(&self) -> &'static mut [u8]{
+        unsafe { slice::from_raw_parts_mut(self.ptr as *mut u8, self.len) }
+    }
 }
 
 unsafe impl Sync for FfiSlice{}
